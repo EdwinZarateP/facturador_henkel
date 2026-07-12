@@ -2090,7 +2090,7 @@ def _run_falabella_pipeline(emit, progress=None) -> list[dict]:
        proceso_abreviado = "OTR", tabla = "FALABELLA", unidades = 0. Convención del bot:
        si valor = 0 se omite.
 
-    Sin archivos -> warning y []. Error de lectura -> BlockingError.
+    Sin archivos -> warning y []. Archivo vacío/ilegible -> warning y se omite (NO detiene).
     """
     def p(stage, pct):
         if progress:
@@ -2110,11 +2110,31 @@ def _run_falabella_pipeline(emit, progress=None) -> list[dict]:
     frames = []
     for path, area in files:
         try:
-            frames.append(io_utils.read_falabella(path, area))
-        except Exception as exc:  # corrupto, sin columna Entrega, hoja rara
-            raise BlockingError(
-                f"{path.name}: no se pudo leer el archivo de falabella ({exc})."
-            ) from exc
+            df = io_utils.read_falabella(path, area)
+        except Exception as exc:  # vacío, sin columna Entrega, hoja rara, corrupto
+            # Falabella es un paso opcional: un archivo vacío o ilegible NO detiene el proceso.
+            # Se advierte con el nombre del archivo y se omite (molde "archivo vacío no es error").
+            emit(
+                {
+                    "severity": "warning",
+                    "file": path.name,
+                    "msg": (
+                        f"{path.name}: archivo vacío o no legible, se omite en Falabella."
+                    ),
+                }
+            )
+            continue
+        if df is not None and not df.empty:
+            frames.append(df)
+
+    if not frames:
+        emit(
+            {
+                "severity": "warning",
+                "msg": "Falabella: ningún archivo aportó filas (Paso 13 omitido).",
+            }
+        )
+        return []
 
     fal = pd.concat(frames, ignore_index=True)
     if fal.empty:

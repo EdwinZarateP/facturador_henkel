@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
   <title>Facturador Henkel</title>
-  <link rel="stylesheet" href="app.css" />
+  <link rel="stylesheet" href="app.css?v=4" />
 </head>
 <body>
   <header class="topbar">
@@ -30,16 +32,6 @@
       <button id="btnExportar" class="btn btn-secondary" disabled>⬇ Descargar Excel</button>
     </section>
 
-    <!-- Validación previa de fuentes (checklist) -->
-    <section id="sourcesCard" class="card sources">
-      <div class="sources-head">
-        <span class="sources-title">📂 Fuentes de datos</span>
-        <button id="btnValidate" class="btn btn-secondary btn-sm" type="button">Validar fuentes</button>
-      </div>
-      <div id="sourcesSummary" class="sources-summary">Revisando archivos…</div>
-      <div id="sourcesList" class="sources-list"></div>
-    </section>
-
     <!-- Avance + problemas -->
     <section id="resultCard" class="card result hidden">
       <div id="progressBox">
@@ -53,11 +45,31 @@
       <div id="issuesBox" class="issues hidden"></div>
     </section>
 
+    <!-- Validación previa de fuentes (checklist) -->
+    <section id="sourcesCard" class="card sources">
+      <div class="sources-head">
+        <span class="sources-title">📂 Fuentes de datos</span>
+        <button id="btnValidate" class="btn btn-secondary btn-sm" type="button">Validar fuentes</button>
+      </div>
+      <div id="sourcesSummary" class="sources-summary">Revisando archivos…</div>
+      <div id="sourcesList" class="sources-list"></div>
+    </section>
+
     <!-- Banner de errores de validación -->
     <div id="banner" class="banner hidden"></div>
 
     <!-- Aviso flotante de éxito (descarga lista) -->
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <!-- Popup modal de error grave (bloqueo del proceso) -->
+    <div id="errorModal" class="modal-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-card">
+        <div class="modal-icon">⛔</div>
+        <h2 id="modalTitle" class="modal-title">No se pudo generar la facturación</h2>
+        <p id="modalMsg" class="modal-msg"></p>
+        <button id="modalClose" class="btn btn-primary">Entendido</button>
+      </div>
+    </div>
 
     <p class="hint">
       Elige el rango de fechas y pulsa <strong>Generar</strong>. Verás el avance del proceso
@@ -69,6 +81,6 @@
 
   <footer class="footer">Facturador Henkel · ejecución local · los datos no salen de este equipo</footer>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

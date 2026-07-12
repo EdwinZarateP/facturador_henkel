@@ -141,6 +141,7 @@ async function generar() {
   } catch (err) {
     setStatus("pill-error", "Error");
     showBanner("error", `No se pudo conectar con el servidor: ${err}`);
+    showErrorModal(`No se pudo conectar con el servidor para iniciar el proceso.\n(${err})`);
     setButtons({ generar: true });
     return;
   }
@@ -148,6 +149,7 @@ async function generar() {
   if (!res.ok) {
     setStatus("pill-error", "Error");
     showBanner("error", `<strong>${res.error}</strong>${res.detail ? `<br>${res.detail}` : ""}`);
+    showErrorModal(`${res.error}${res.detail ? `\n${res.detail}` : ""}`);
     setButtons({ generar: true });
     return;
   }
@@ -209,6 +211,10 @@ function onFinish(state) {
       `<strong>Proceso detenido${t ? ` tras ${t}` : ""} por un error de archivo.</strong>` +
       `${state.error ? `<br>${escapeHtml(state.error)}` : ""}` +
       `<br>Corrige el archivo indicado y vuelve a pulsar Generar.`;
+    showErrorModal(
+      `El proceso se detuvo${t ? ` tras ${t}` : ""} por un error de archivo.` +
+      `${state.error ? `\n\n${state.error}` : ""}\n\nCorrige el archivo indicado y vuelve a pulsar Generar.`
+    );
     setButtons({ generar: true, exportar: false });
     return;
   }
@@ -391,10 +397,29 @@ function notifyDone(msg) {
   }
 }
 
+// ---- Popup modal de error grave (bloqueo del proceso / fallo de conexión) ----
+function showErrorModal(msg) {
+  $("modalMsg").textContent = (msg && String(msg).trim())
+    || "Ocurrió un error inesperado. Revisa los archivos e inténtalo de nuevo.";
+  $("errorModal").classList.remove("hidden");
+}
+function closeErrorModal() {
+  $("errorModal").classList.add("hidden");
+}
+
 // ---- Eventos ----
 document.addEventListener("DOMContentLoaded", () => {
   $("btnGenerar").addEventListener("click", generar);
   $("btnExportar").addEventListener("click", exportar);
   $("btnValidate").addEventListener("click", validateSources);
+  $("modalClose").addEventListener("click", closeErrorModal);
+  // Cerrar el popup al hacer clic en el fondo (no dentro de la tarjeta).
+  $("errorModal").addEventListener("click", (e) => {
+    if (e.target === $("errorModal")) closeErrorModal();
+  });
+  // ESC también cierra el popup.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("errorModal").classList.contains("hidden")) closeErrorModal();
+  });
   init();
 });
