@@ -7,6 +7,8 @@ Sirve el frontend (static/) en / y la API en /api.
 """
 from __future__ import annotations
 
+import os
+import sys
 import threading
 import webbrowser
 from pathlib import Path
@@ -17,9 +19,14 @@ from fastapi.staticfiles import StaticFiles
 
 from api.routes import router
 
-STATIC_DIR = Path(__file__).resolve().parent / "static"
-HOST = "127.0.0.1"
-PORT = 8000
+# Si la app corre empaquetada (PyInstaller), los archivos estáticos (HTML/CSS/JS/logo)
+# están dentro del bundle (carpetas extraídas desde _MEIPASS). En desarrollo, junto a app.py.
+if getattr(sys, "frozen", False):
+    STATIC_DIR = Path(sys._MEIPASS) / "static"
+else:
+    STATIC_DIR = Path(__file__).resolve().parent / "static"
+HOST = os.environ.get("FACTURADOR_HOST", "127.0.0.1")
+PORT = int(os.environ.get("FACTURADOR_PORT", "8000"))
 
 
 def create_app() -> FastAPI:

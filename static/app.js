@@ -57,6 +57,54 @@ async function init() {
   } catch {
     /* el usuario escribirá las fechas manualmente */
   }
+  validateSources(); // checklist de fuentes al cargar
+}
+
+// ---- Validación previa de fuentes (checklist antes de facturar) ----
+async function validateSources() {
+  $("sourcesSummary").textContent = "Revisando archivos…";
+  $("sourcesList").innerHTML = "";
+  try {
+    const res = await fetch("/api/validate").then((r) => r.json());
+    if (res.ok) renderSources(res.data);
+    else $("sourcesSummary").textContent = "No se pudieron revisar las fuentes.";
+  } catch {
+    $("sourcesSummary").textContent = "No se pudieron revisar las fuentes.";
+  }
+}
+
+function renderSources(data) {
+  const s = data.summary;
+  const parts = [`<span class="src-ok">✅ ${s.present} presentes</span>`];
+  if (s.missing_optional) parts.push(`<span class="src-warn">⚠️ ${s.missing_optional} opcionales faltan</span>`);
+  if (s.missing_required) parts.push(`<span class="src-req">⛔ ${s.missing_required} requeridos faltan</span>`);
+  const nota = s.missing_required
+    ? `<span class="src-note">Faltan archivos requeridos: la facturación se detendrá.</span>`
+    : s.missing_optional
+      ? `<span class="src-note">Algunos pasos opcionales no tendrán datos (se omiten con aviso).</span>`
+      : `<span class="src-note">Todo en orden. Listo para facturar.</span>`;
+  $("sourcesSummary").innerHTML = parts.join(" ") + " " + nota;
+
+  const groups = {};
+  for (const it of data.items) (groups[it.group] = groups[it.group] || []).push(it);
+  const order = ["Requeridos", "Pasos", "Auxiliares"];
+  const icon = { present: "✅", missing_optional: "⚠️", missing_required: "⛔" };
+  const cls = { present: "src-ok", missing_optional: "src-warn", missing_required: "src-req" };
+  let html = "";
+  for (const g of order) {
+    if (!groups[g]) continue;
+    html += `<div class="src-group"><div class="src-group-head">${g}</div>`;
+    for (const it of groups[g]) {
+      const cnt = it.count > 0
+        ? `<span class="src-count">${it.count} archivo${it.count === 1 ? "" : "s"}</span>`
+        : `<span class="src-count src-missing">no encontrado</span>`;
+      html += `<div class="src-row ${cls[it.status]}"><span class="src-ico">${icon[it.status]}</span>`
+        + `<span class="src-label">${escapeHtml(it.label)}</span>`
+        + `<span class="src-where">${escapeHtml(it.where)}</span>${cnt}</div>`;
+    }
+    html += `</div>`;
+  }
+  $("sourcesList").innerHTML = html;
 }
 
 // ---- Generar: arranca el proceso y sondea el avance ----
@@ -347,5 +395,6 @@ function notifyDone(msg) {
 document.addEventListener("DOMContentLoaded", () => {
   $("btnGenerar").addEventListener("click", generar);
   $("btnExportar").addEventListener("click", exportar);
+  $("btnValidate").addEventListener("click", validateSources);
   init();
 });

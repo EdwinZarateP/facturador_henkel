@@ -7,11 +7,18 @@ importar de aquí. Si las fuentes renombran columnas, se editan aquí nomás.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 # Raíz del proyecto: la carpeta que contiene AUXILIARES/, CONSUMER/, etc.
 # Se puede sobreescribir con la variable de entorno FACTURADOR_BASE_DIR.
-BASE_DIR = Path(os.environ.get("FACTURADOR_BASE_DIR", Path(__file__).resolve().parent)).resolve()
+# Si la app corre empaquetada (PyInstaller), los datos viven JUNTO al .exe
+# (no dentro del bundle temporal), para que el cliente deje ahí sus Excels.
+if getattr(sys, "frozen", False):
+    _BASE_DEFAULT = Path(sys.executable).resolve().parent
+else:
+    _BASE_DEFAULT = Path(__file__).resolve().parent
+BASE_DIR = Path(os.environ.get("FACTURADOR_BASE_DIR", _BASE_DEFAULT)).resolve()
 
 # Carpetas de datos (viven en la raíz del proyecto).
 DIRS = {

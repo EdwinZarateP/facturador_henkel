@@ -7,6 +7,7 @@ Contrato uniforme:
 Endpoints:
   GET  /api/tarifas              -> tarifas (referencia, para pasos siguientes)
   GET  /api/daterange/default    -> min/max de Fecha factura para precargar el calendario
+  GET  /api/validate             -> checklist de archivos presentes/faltantes (antes de facturar)
   POST /api/run                  -> arranca el proceso en segundo plano (SALIDAS + DESTRUCCION +
                                     INGRESOS + OCUPACION + TRASLADOS + MAQUILA + EXPORTACIONES)
   GET  /api/progress             -> avance (% y etapa) + problemas detectados (en vivo)
@@ -69,6 +70,16 @@ def get_tarifas():
 @router.get("/daterange/default")
 def get_default_daterange():
     return _ok(pipeline.default_date_range())
+
+
+# ---------------------------------------------------------------------------
+# Validación previa de fuentes (checklist antes de facturar)
+# ---------------------------------------------------------------------------
+
+@router.get("/validate")
+def get_validate():
+    """Checklist de archivos presentes/faltantes en todas las carpetas de entrada."""
+    return _ok(pipeline.validate_sources())
 
 
 # ---------------------------------------------------------------------------

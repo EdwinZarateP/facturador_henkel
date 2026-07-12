@@ -2750,6 +2750,107 @@ def default_date_range() -> dict:
     }
 
 
+def validate_sources() -> dict:
+    """Escanea todas las carpetas de entrada y devuelve un checklist de qué archivos están
+    presentes y cuáles faltan, para mostrar al usuario ANTES de facturar.
+
+    Sólo verifica PRESENCIA (no lee contenidos): es rápido y tolerante (nunca lanza).
+    Semántica de `status`:
+      - "present"           -> se encontraron archivos.
+      - "missing_required"  -> falta y su ausencia DETIENE la facturación (sólo Salidas).
+      - "missing_optional"  -> falta pero no detiene: ese paso se omite o se degrada con aviso.
+    Reutiliza los finders de io_utils (única fuente de verdad de carpeta + patrón), así el
+    checklist siempre coincide con lo que procesa la pipeline.
+    """
+    items = []
+
+    def _status(present: bool, required: bool) -> str:
+        if present:
+            return "present"
+        return "missing_required" if required else "missing_optional"
+
+    # 1) Fuentes por paso (vía finders de io_utils).
+    finder_sources = [
+        ("Requeridos", "Salidas (CONSUMER + PROFESIONAL)", io_utils.find_salidas_files, True, "CONSUMER/ · PROFESIONAL/"),
+        ("Pasos", "Destrucción", io_utils.find_destruccion_files, False, "CONSUMER/ · PROFESIONAL/"),
+        ("Pasos", "Ingresos", io_utils.find_ingresos_files, False, "CONSUMER/ · PROFESIONAL/"),
+        ("Pasos", "Ocupación (almacenamiento)", io_utils.find_ocupacion_files, False, "CONSUMER/ · PROFESIONAL/"),
+        ("Pasos", "Traslados", io_utils.find_traslados_files, False, "CONSUMER/ · PROFESIONAL/"),
+        ("Pasos", "Maquila", io_utils.find_maquila_files, False, "MAQUILA/"),
+        ("Pasos", "Exportaciones", io_utils.find_exportacion_files, False, "EXPORTACIONES/"),
+        ("Pasos", "Etiquetas", io_utils.find_etiquetas_files, False, "MAQUILA/"),
+        ("Pasos", "Paletizado", io_utils.find_paletizado_files, False, "EXPORTACIONES/"),
+        ("Pasos", "Trincaje", io_utils.find_trincaje_files, False, "EXPORTACIONES/"),
+        ("Pasos", "Planta", io_utils.find_planta_files, False, "CONSUMER/ · PROFESIONAL/"),
+        ("Pasos", "Material de empaque (Bodega 8)", io_utils.find_material_files, False, "OTROS/"),
+        ("Pasos", "Falabella", io_utils.find_falabella_files, False, "CONSUMER/ · PROFESIONAL/"),
+        ("Pasos", "Otros (cánones, horas extras…)", io_utils.find_otros_files, False, "OTROS/"),
+    ]
+    for group, label, finder, required, where in finder_sources:
+        try:
+            count = len(finder())
+        except Exception:
+            count = 0
+        items.append(
+            {
+                "group": group,
+                "label": label,
+                "where": where,
+                "count": count,
+                "required": required,
+                "status": _status(count > 0, required),
+            }
+        )
+
+    # 2) Archivos auxiliares fijos (lookup) por ruta directa.
+    file_sources = [
+        ("Auxiliares", "Tarifas (para los costos)", config.FILES["tarifas"], False, "AUXILIARES/tarifas.xlsx"),
+        ("Auxiliares", "Huellas (pallet/caja)", config.FILES["huellas"], False, "HUELLAS/huellas.xlsx"),
+        ("Auxiliares", "IDH especiales (negocio por material)", config.FILES["idh_especiales"], False, "AUXILIARES/idh_especiales.xlsx"),
+        ("Auxiliares", "Tipo de despacho (CEDI)", config.FILES["tipo_despacho"], False, "AUXILIARES/tipo_despacho.xlsx"),
+        ("Auxiliares", "Equivalencias de ocupación", config.FILES["equivalencias"], False, "AUXILIARES/equivalencias_almacenamiento.xlsx"),
+    ]
+    for group, label, path, required, where in file_sources:
+        try:
+            present = bool(path.exists())
+        except Exception:
+            present = False
+        items.append(
+            {
+                "group": group,
+                "label": label,
+                "where": where,
+                "count": 1 if present else 0,
+                "required": required,
+                "status": _status(present, required),
+            }
+        )
+
+    # 3) Adicionales (carpeta, varios archivos).
+    try:
+        adic = len(io_utils.find_adicionales_files())
+    except Exception:
+        adic = 0
+    items.append(
+        {
+            "group": "Auxiliares",
+            "label": "Adicionales (tipo de trabajo)",
+            "where": "CONSUMER/ · PROFESIONAL/ (adicionales*)",
+            "count": adic,
+            "required": False,
+            "status": _status(adic > 0, False),
+        }
+    )
+
+    summary = {
+        "present": sum(1 for i in items if i["status"] == "present"),
+        "missing_optional": sum(1 for i in items if i["status"] == "missing_optional"),
+        "missing_required": sum(1 for i in items if i["status"] == "missing_required"),
+        "ok": not any(i["status"] == "missing_required" for i in items),
+    }
+    return {"items": items, "summary": summary}
+
+
 # ---------------------------------------------------------------------------
 # Punto de entrada para prueba rápida desde consola
 # ---------------------------------------------------------------------------

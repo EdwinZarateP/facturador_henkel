@@ -30,6 +30,16 @@
       <button id="btnExportar" class="btn btn-secondary" disabled>⬇ Descargar Excel</button>
     </section>
 
+    <!-- Validación previa de fuentes (checklist) -->
+    <section id="sourcesCard" class="card sources">
+      <div class="sources-head">
+        <span class="sources-title">📂 Fuentes de datos</span>
+        <button id="btnValidate" class="btn btn-secondary btn-sm" type="button">Validar fuentes</button>
+      </div>
+      <div id="sourcesSummary" class="sources-summary">Revisando archivos…</div>
+      <div id="sourcesList" class="sources-list"></div>
+    </section>
+
     <!-- Avance + problemas -->
     <section id="resultCard" class="card result hidden">
       <div id="progressBox">

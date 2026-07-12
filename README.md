@@ -1032,6 +1032,7 @@ solo transporta entradas/salidas. Los pasos siguientes extienden `pipeline.py`.
 |---|---|---|
 | GET | `/api/tarifas` | tarifas (referencia; para pasos siguientes) |
 | GET | `/api/daterange/default` | min/max de `Fecha factura` para precargar el calendario |
+| GET | `/api/validate` | checklist de archivos presentes/faltantes en todas las carpetas (antes de facturar) |
 | POST | `/api/run` | arranca el proceso en segundo plano (los 14 pasos) |
 | GET | `/api/progress` | `{stage, percent, done, blocked, error, issues, has_result, elapsed_seconds}` (sondeo) |
 | GET | `/api/export?start=&end=` | `.xlsx` (hoja **Servicios**: los 14 pasos combinados) |
@@ -1041,6 +1042,13 @@ Contrato uniforme: `{ok:true,data}` / `{ok:false,error,detail}`.
 ---
 
 ## Detección de errores en las fuentes
+
+**Validación previa (checklist):** `GET /api/validate` (`pipeline.validate_sources()`)
+escanea todas las carpetas y devuelve, por fuente, si está presente (✅), si falta y es
+opcional (⚠️ — ese paso se omite con aviso) o si falta y es requerido (⛔ — detiene la
+facturación; sólo Salidas). Sólo verifica **presencia** (no lee contenidos): rápido y
+tolerante. La UI lo muestra en la tarjeta **Fuentes de datos** y lo auto-ejecuta al cargar
+la página (botón *Validar fuentes* para repetirlo).
 
 El procesamiento distingue dos tipos de problemas:
 - **Errores graves** (archivo corrupto, mal formato, falta un archivo obligatorio o una
