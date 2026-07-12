@@ -2678,13 +2678,69 @@ def load_tarifas_reference() -> list[dict]:
     return records
 
 
+def _collect_range_dates() -> "pd.Series":
+    """Concatena (de forma tolerante) las columnas de fecha de TODAS las fuentes para
+    precargar el calendario: salidas (Fecha factura), ingresos/maquila (Posting Date) y
+    ocupación/exportaciones/material (Fecha). Devuelve una Serie de timestamps (puede ser
+    vacía). Un archivo roto o una fuente ausente no rompen la precarga.
+
+    Importante: el extremo 'Hasta' debe alcanzar el fin de TODAS las ventanas — los salidas
+    terminan en 20/06, pero ocupación/material/exportaciones llegan a 21/06; mirar sólo
+    salidas deja el calendario un día corto para esos pasos.
+    """
+    pieces: list = []
+
+    def _add(series_like):
+        try:
+            ts = pd.to_datetime(series_like, errors="coerce").dropna()
+            if not ts.empty:
+                pieces.append(ts)
+        except Exception:
+            pass
+
+    # SALIDAS (fecha factura) — reutiliza el cargador tolerante.
+    try:
+        salidas, _, _ = _load_all_salidas(strict=False)
+        if not salidas.empty and "fecha" in salidas.columns:
+            _add(salidas["fecha"])
+    except Exception:
+        pass
+
+    # Resto de fuentes con columna de fecha propia: (finder, reader, columna).
+    dated = [
+        (io_utils.find_ingresos_files, io_utils.read_ingresos, "posting_date"),
+        (io_utils.find_ocupacion_files, io_utils.read_ocupacion, "fecha"),
+        (io_utils.find_maquila_files, io_utils.read_maquila, "posting_date"),
+        (io_utils.find_exportacion_files, io_utils.read_exportacion, "fecha"),
+        (io_utils.find_material_files, io_utils.read_material, "fecha"),
+    ]
+    for finder, reader, col in dated:
+        try:
+            files = finder()
+        except Exception:
+            files = []
+        for item in files:
+            try:
+                if isinstance(item, tuple):
+                    path, area = item
+                    df = reader(path, area)
+                else:
+                    df = reader(item)
+                if not df.empty and col in df.columns:
+                    _add(df[col])
+            except Exception:
+                continue
+
+    if not pieces:
+        return pd.Series([], dtype="datetime64[ns]")
+    return pd.concat(pieces, ignore_index=True)
+
+
 def default_date_range() -> dict:
-    """Min/Max de Fecha factura en todos los archivos, para precargar el calendario.
-    Tolerante (strict=False): un archivo roto no rompe la precarga del calendario."""
-    salidas, _, _ = _load_all_salidas(strict=False)
-    if salidas.empty:
-        return {"start": None, "end": None}
-    fechas = pd.to_datetime(salidas["fecha"], errors="coerce").dropna()
+    """Min/Max de fechas en TODAS las fuentes (salidas, ingresos, ocupación, maquila,
+    exportaciones, material) para precargar el calendario. Tolerante (strict=False): un
+    archivo roto o una fuente ausente no rompen la precarga."""
+    fechas = _collect_range_dates()
     if fechas.empty:
         return {"start": None, "end": None}
     return {

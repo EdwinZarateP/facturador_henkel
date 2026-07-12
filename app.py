@@ -24,6 +24,19 @@ PORT = 8000
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Facturador Henkel")
+
+    # No cachear los archivos estáticos (index.html/app.js/app.css): garantiza que el
+    # navegador siempre cargue la última versión tras un cambio (local, sin versionado).
+    @app.middleware("http")
+    async def _no_cache_static(request, call_next):
+        response = await call_next(request)
+        path = request.url.path.lower()
+        if path == "/" or path.endswith((".html", ".js", ".css")):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
     app.include_router(router, prefix="/api")
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app

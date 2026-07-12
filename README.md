@@ -1230,14 +1230,16 @@ El usuario construye **paso a paso**:
 - **Ocupación** (verificado 2026-07-11): Power BI filtra los días de almacenamiento por la
   ventana de `RANGOS_FECHAS` (joined por la **fecha del nombre** del archivo; `logica.txt`
   322–349). Para junio esa ventana es **21/05–21/06** (32 días). El bot filtra por el **rango
-  libre del calendario**, y el **default del calendario** se calcula del máx de `Fecha factura`
-  de los **salidas** (20/06), por lo que se queda **un día corto** para ocupación. Si el *Hasta*
-  no llega al fin de la ventana, los servicios cuyo promedio roza un entero difieren de Power BI
-  (junio: `PALLET BODEGA 7` CONSUMER **3754** vs 3760, PROFESIONAL **1272** vs 1271; `PALLET
-  BODEGA 8` LAUNDRY **762** vs 766); los demás coinciden porque su `ceil` no se mueve. **Paridad
-  exacta:** elegir en el calendario la ventana de `rangos_fechas_facturacion.xlsx` (21/05–21/06
-  para junio) → el bot da **3760 / 1271 / 766**, idéntico a Power BI. (Decisión del usuario:
-  mantener rango libre; **no** aplicar `RANGOS_FECHAS` automáticamente.)
+  libre del calendario**, y el **default del calendario** se calcula del min/máx de fechas
+  de **TODAS** las fuentes (`default_date_range()` → `_collect_range_dates`: salidas, ingresos,
+  ocupación, maquila, exportaciones, material), así que el *Hasta* por defecto **alcanza** el
+  fin de la ventana de ocupación/material/exportaciones (21/06). Si el *Hasta* no llega al fin
+  de la ventana, los servicios cuyo promedio roza un entero difieren de Power BI (junio con la
+  ventana corta: `PALLET BODEGA 7` CONSUMER **3754** vs 3760, PROFESIONAL **1272** vs 1271;
+  `PALLET BODEGA 8` LAUNDRY **762** vs 766); los demás coinciden porque su `ceil` no se mueve.
+  **Paridad exacta:** con el *Hasta* por defecto (21/05–21/06 para junio) el bot da
+  **3760 / 1271 / 766**, idéntico a Power BI. (Decisión del usuario: mantener rango libre;
+  **no** aplicar `RANGOS_FECHAS` automáticamente.)
 - **Traslados**: Power BI agrupa por `(fecha del nombre, negocio)` y filtra por la ventana de
   `RANGOS_FECHAS`. El bot **no filtra por fecha** (decisión del usuario, molde DESTRUCCIÓN):
   procesa **todos** los `traslados*` y agrega solo por `negocio`. Además, el bot **omite** los
@@ -1328,8 +1330,9 @@ El usuario construye **paso a paso**:
   `POST /api/run`; el avance se sigue con `RunState` (`get_progress()`, lleva
   `elapsed_seconds`/cronómetro). Los **errores graves** lanzan `BlockingError` y **detienen**
   (archivo corrupto / mal formato / falta columna o archivo obligatorio); el resto son
-  `issues` warning que **no detienen**. `_load_all_salidas(strict=False)` sólo para
-  `default_date_range()` (precarga del calendario, tolerante).
+  `issues` warning que **no detienen**. `default_date_range()` (precarga del calendario, vía
+  `_collect_range_dates`) junta las fechas de **todas** las fuentes para que el *Hasta* por
+  defecto cubra el fin de la ventana de ocupación/material/exportaciones (no sólo salidas).
 - **Output**: una fila por `servicio` (agrupada por `_aggregate_servicios`); `periodo` =
   primer día del último mes del rango (`_periodo_for_range`). `tipo_trabajo`/`tipo_despacho`
   no van al Excel (sólo internos). Columnas: `excel_export.SERVICIO_COLUMNS`.
