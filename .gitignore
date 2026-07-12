@@ -1,0 +1,53 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+
+# ===== Datos del Facturador (CONFIDENCIALES — no subir a git) =====
+# Todos los Excel/CSV son datos operativos de Henkel: tarifas, clientes,
+# entregas y facturas. Se ignoran siempre; el código sí se versiona.
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.csv
+# Archivos de bloqueo de Excel (hoja abierta)
+~$*
+
+# ===== Secretos / credenciales (por si se añaden luego) =====
+.env
+*.env
+.env.local
+secrets.json
+*.key
+*.pem
+*.pfx
+*.p12
+*.cer
+
+# ===== Claude Code / IDE / SO =====
+.claude/
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.DS_Store
+
+# ===== Logs =====
+*.log
+logs/

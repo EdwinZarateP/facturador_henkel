@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Facturador Henkel</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">H</div>
+      <div>
+        <h1>Facturador Henkel</h1>
+        <p class="subtitle">Salidas CONSUMER + PROFESIONAL · Destrucción</p>
+      </div>
+    </div>
+    <div id="statusPill" class="pill pill-idle">Listo</div>
+  </header>
+
+  <main class="container">
+    <!-- Controles -->
+    <section class="card controls">
+      <div class="field">
+        <label for="startDate">Desde</label>
+        <input type="date" id="startDate" />
+      </div>
+      <div class="field">
+        <label for="endDate">Hasta</label>
+        <input type="date" id="endDate" />
+      </div>
+      <button id="btnGenerar" class="btn btn-primary">Generar</button>
+      <button id="btnExportar" class="btn btn-secondary" disabled>⬇ Descargar Excel</button>
+    </section>
+
+    <!-- Avance + problemas -->
+    <section id="resultCard" class="card result hidden">
+      <div id="progressBox">
+        <div class="progress-head">
+          <span id="progressStage" class="progress-stage">Iniciando…</span>
+          <span id="progressPct" class="progress-pct">0%</span>
+        </div>
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <div id="progressNote" class="progress-note"></div>
+      </div>
+      <div id="issuesBox" class="issues hidden"></div>
+    </section>
+
+    <!-- Banner de errores de validación -->
+    <div id="banner" class="banner hidden"></div>
+
+    <p class="hint">
+      Elige el rango de fechas y pulsa <strong>Generar</strong>. Verás el avance del proceso
+      y, si todo está bien, se habilita <strong>Descargar Excel</strong>. Si una fuente tiene
+      un error grave (archivo corrupto, mal formato o faltante), el proceso se <strong>detiene</strong>
+      y se indica aquí para que la corrijas y vuelvas a generar.
+    </p>
+  </main>
+
+  <footer class="footer">Facturador Henkel · ejecución local · los datos no salen de este equipo</footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+let
+    Origen = SharePoint.Files(
+        "https://bluecargogroup.sharepoint.com/sites/Almacenamiento",
+        [ApiVersion = 15]
+    ),
+
+    FiltrarCarpeta = Table.SelectRows(
+        Origen,
+        each Text.Contains([Folder Path], "FACTURACION")
+    ),
+
+    QuitarOcultos = Table.SelectRows(
+        FiltrarCarpeta,
+        each [Attributes]?[Hidden]? <> true
+    ),
+
+    FiltrarPorNombre = Table.SelectRows(
+        QuitarOcultos,
+        each Text.StartsWith([Name], "falabella")
+    ),
+    #"Archivos ocultos filtrados1" = Table.SelectRows(FiltrarPorNombre, each [Attributes]?[Hidden]? <> true),
+    #"Invocar función personalizada1" = Table.AddColumn(#"Archivos ocultos filtrados1", "Transformar archivo (16)", each #"Transformar archivo (16)"([Content])),
+    #"Columnas con nombre cambiado1" = Table.RenameColumns(#"Invocar función personalizada1", {"Name", "Source.Name"}),
+    #"Otras columnas quitadas1" = Table.SelectColumns(#"Columnas con nombre cambiado1", {"Source.Name", "Transformar archivo (16)"}),
+    #"Columna de tabla expandida1" = Table.ExpandTableColumn(#"Otras columnas quitadas1", "Transformar archivo (16)", Table.ColumnNames(#"Transformar archivo (16)"(#"Archivo de ejemplo (16)"))),
+    #"Tipo cambiado" = Table.TransformColumnTypes(#"Columna de tabla expandida1",{{"Source.Name", type text}, {"DIGITO VERIFICADOR", Int64.Type}, {"NIT HENKEL", Int64.Type}, {"CONSECUTIVO ASIGNADO POR EL PROVEEDOR BLU LOGISTICS", Int64.Type}, {"NUMERACION", Int64.Type}, {"LARGO 18 DIGITOS ", Int64.Type}, {"TIENDA", type text}, {"Entrega", type text}, {"MES", type date}}),
+    #"Valor reemplazado" = Table.ReplaceValue(#"Tipo cambiado",".xlsx","",Replacer.ReplaceText,{"Source.Name"}),
+    #"Dividir columna por delimitador" = Table.SplitColumn(#"Valor reemplazado", "Source.Name", Splitter.SplitTextByDelimiter("_", QuoteStyle.Csv), {"Source.Name.1", "negocio", "fecha"}),
+    #"Otras columnas quitadas" = Table.SelectColumns(#"Dividir columna por delimitador",{"negocio", "fecha", "MES", "Entrega"}),
+    #"Valor reemplazado1" = Table.ReplaceValue(#"Otras columnas quitadas","prof","profesional",Replacer.ReplaceText,{"negocio"}),
+    #"Tipo cambiado1" = Table.TransformColumnTypes(#"Valor reemplazado1",{{"fecha", type date}}),
+    #"Filas filtradas" = Table.SelectRows(#"Tipo cambiado1", each ([Entrega] <> null)),
+    #"Filas agrupadas" = Table.Group(#"Filas filtradas", {"fecha", "negocio"}, {{"valor", each Table.RowCount(_), Int64.Type}}),
+    #"Columna duplicada" = Table.DuplicateColumn(#"Filas agrupadas", "negocio", "negocio_facturador"),
+    #"Personalizada agregada" = Table.AddColumn(#"Columna duplicada", "servicio", each "ETIQUETADO (FALABELLA)"),
+    #"Personalizada agregada1" = Table.AddColumn(#"Personalizada agregada", "proceso_extendido", each "ETIQUETADO (FALABELLA)"),
+    #"Personalizada agregada2" = Table.AddColumn(#"Personalizada agregada1", "macro_proceso", each "OTROS"),
+    #"Personalizada agregada3" = Table.AddColumn(#"Personalizada agregada2", "proceso_abreviado", each "OTR"),
+    #"Tipo cambiado2" = Table.TransformColumnTypes(#"Personalizada agregada3",{{"servicio", type text}, {"proceso_extendido", type text}, {"proceso_abreviado", type text}, {"macro_proceso", type text}}),
+    #"Columnas reordenadas" = Table.ReorderColumns(#"Tipo cambiado2",{"fecha", "negocio", "negocio_facturador", "servicio", "valor", "proceso_extendido", "macro_proceso", "proceso_abreviado"}),
+    #"Personalizada agregada4" = Table.AddColumn(#"Columnas reordenadas", "unidades", each 0),
+    #"Tipo cambiado3" = Table.TransformColumnTypes(#"Personalizada agregada4",{{"unidades", type number}}),
+    #"Columnas reordenadas1" = Table.ReorderColumns(#"Tipo cambiado3",{"fecha", "negocio", "negocio_facturador", "servicio", "valor", "unidades", "proceso_extendido", "macro_proceso", "proceso_abreviado"}),
+    #"Personalizada agregada5" = Table.AddColumn(#"Columnas reordenadas1", "tabla", each "FALABELLA"),
+    #"Tipo cambiado4" = Table.TransformColumnTypes(#"Personalizada agregada5",{{"tabla", type text}})
+in
+    #"Tipo cambiado4"
