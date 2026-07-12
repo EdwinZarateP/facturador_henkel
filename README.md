@@ -739,8 +739,9 @@ Facturación del **almacenamiento de material de empaque en Bodega 8 ME**. El va
 3. `valor = ceil(promedio(cant_bodega_8))` sobre los días en rango
    (`Number.RoundUp(List.Average([valor]))` del PQ).
 4. Servicio final (**una línea**): `negocio = "MATERIAL DE EMPAQUE"`,
-   `negocio_facturador = "MATERIAL EMPAQUE"` (**sin "DE"** — `AddNegocioFacturador` del PQ,
-   distinto a `negocio`), `servicio = "ALMACENAMIENTO PALLET BODEGA 8 ME GENERAL"`,
+   `negocio_facturador = "MATERIAL DE EMPAQUE"` (en el PQ original venía sin "DE",
+   distinto a `negocio`; aquí se unifica con "DE" por decisión del usuario),
+   `servicio = "ALMACENAMIENTO PALLET BODEGA 8 ME GENERAL"`,
    `unidades = 0`, `proceso_extendido = "PALLETS"`, `macro_proceso = "ALMACENAMIENTO"`,
    `proceso_abreviado = "WHS"`, `tabla = "MATERIAL"`. Convención del bot: si `valor = 0` se
    omite.
@@ -749,7 +750,7 @@ Facturación del **almacenamiento de material de empaque en Bodega 8 ME**. El va
 - `config.py`: `DIRS["otros"] = BASE_DIR / "OTROS"`,
   `MATERIAL_GLOB = "ocupacionMaterial*.[xX][lL][sS][xX]"` (sobre `DIRS["otros"]`),
   `MATERIAL_COLS = {fecha:"fecha", valor:"cant_bodega_8"}`, `MATERIAL_NEGOCIO = "MATERIAL DE
-  EMPAQUE"`, `MATERIAL_NEGOCIO_FACTURADOR = "MATERIAL EMPAQUE"`, `MATERIAL_SERVICIO =
+  EMPAQUE"`, `MATERIAL_NEGOCIO_FACTURADOR = "MATERIAL DE EMPAQUE"`, `MATERIAL_SERVICIO =
   "ALMACENAMIENTO PALLET BODEGA 8 ME GENERAL"`.
 - `processing/io_utils.py`: `find_material_files(base_dir)` (glob `ocupacionMaterial*` sobre
   `DIRS["otros"]`; devuelve solo rutas) y `read_material(path)` (molde `read_ocupacion`,
@@ -760,7 +761,7 @@ Facturación del **almacenamiento de material de empaque en Bodega 8 ME**. El va
 - `processing/excel_export.py`: **sin cambios** (las columnas ya cubren MATERIAL).
 
 **Salida esperada** (rango 20/05–19/06/2026, ya calculada): **1 servicio MATERIAL**
-- MATERIAL DE EMPAQUE / MATERIAL EMPAQUE: `ALMACENAMIENTO PALLET BODEGA 8 ME GENERAL` 553
+- MATERIAL DE EMPAQUE / MATERIAL DE EMPAQUE: `ALMACENAMIENTO PALLET BODEGA 8 ME GENERAL` 553
   (= `ceil` del promedio de 30 días en rango, avg 552.8).
 
 > Validación (verificada): `python -m processing.pipeline` da **63 líneas** en la hoja
@@ -1103,7 +1104,7 @@ tarifa, costo total ≈ **\$1.675.172.793**):
 - **PALETIZADO**: 2 líneas — `PALETIZADO EXPO IC` (CONSUMER/CONSUMER 58, PROFESIONAL/PROFESIONAL 1.199).
 - **TRINCAJE**: 1 línea — `DOBLE TRINCAJE` (CONSUMER/CONSUMER 54 = 27 filas × 2).
 - **PLANTA**: 2 líneas — `TRASLADO PALLETS PLANTA - CEDI` (CONSUMER/CONSUMER 2.067, PROFESIONAL/PROFESIONAL 1.293).
-- **MATERIAL**: 1 línea — `ALMACENAMIENTO PALLET BODEGA 8 ME GENERAL` (MATERIAL DE EMPAQUE/MATERIAL EMPAQUE 553 = `ceil` del promedio de 30 días).
+- **MATERIAL**: 1 línea — `ALMACENAMIENTO PALLET BODEGA 8 ME GENERAL` (MATERIAL DE EMPAQUE/MATERIAL DE EMPAQUE 553 = `ceil` del promedio de 30 días).
 - **FALABELLA**: 1 línea — `ETIQUETADO (FALABELLA)` (PROFESIONAL/PROFESIONAL 114 = 114 filas con `Entrega` no nula; sin `falabella_cons*` no hay línea CONSUMER).
 - **OTROS**: 33 líneas **anexadas pre-armadas** de `OTROS/otros_*.xlsx` (todas con tabla
   `OTROS`; el archivo traía 28 OTROS + 4 ALM + 1 OUB pero se ignora)
@@ -1188,7 +1189,7 @@ El usuario construye **paso a paso**:
     Detalle y salida esperada (2 servicios) en la sección "Paso 11 (Planta) — ✅ HECHO".
 17. ~~**Material (Paso 12)**: `ocupacionMaterial*` (de `OTROS/`) → servicio `ALMACENAMIENTO
     PALLET BODEGA 8 ME GENERAL` (`ceil` del promedio diario de `cant_bodega_8` en el rango),
-    `negocio = MATERIAL DE EMPAQUE` / `nf = MATERIAL EMPAQUE`, rango de fechas del usuario
+    `negocio = MATERIAL DE EMPAQUE` / `nf = MATERIAL DE EMPAQUE`, rango de fechas del usuario
     sobre `fecha`. Sumado a la hoja Servicios.~~ **✓ HECHO.** Detalle y salida esperada
     (1 servicio) en la sección "Paso 12 (Material) — ✅ HECHO".
 18. ~~**Falabella (Paso 13)**: `falabella*` (de `CONSUMER/`/`PROFESIONAL/`) → servicio
@@ -1294,8 +1295,9 @@ El usuario construye **paso a paso**:
   negocio.
 - **Material**: el PQ filtra los días por la ventana de `RANGOS_FECHAS` (joined por la fecha
   del NOMBRE del archivo, sobre la `fecha` del contenido) y hace `valor = ceil(promedio(
-  cant_bodega_8))`, con `negocio = MATERIAL DE EMPAQUE` y `nf = MATERIAL EMPAQUE` (sin "DE")
-  constantes. El bot filtra `fecha` por el **rango libre del calendario** (mismo modelo que
+  cant_bodega_8))`, con `negocio = MATERIAL DE EMPAQUE` y `nf = MATERIAL EMPAQUE` (en el PQ
+  venía sin "DE"; el bot lo unifica con "DE" por decisión del usuario) constantes. El bot
+  filtra `fecha` por el **rango libre del calendario** (mismo modelo que
   Ocupación) y aplica el mismo `ceil(promedio)`. Al igual que en Ocupación/Exportaciones, el
   baseline 20/05–19/06 queda **un día corto** frente a la ventana 21/05–21/06 de PBI (30 vs 32
   días → 553 vs 551); para paridad exacta elegir 21/05–21/06. Además, el bot **omite** el

@@ -347,11 +347,11 @@ MATERIAL_COLS = {
     "fecha": "fecha",
     "valor": "cant_bodega_8",
 }
-# Negocio/negocio_facturador/servicio FIJOS del PQ. OJO: `negocio_facturador` es
-# "MATERIAL EMPAQUE" (SIN "DE"), distinto a `negocio` "MATERIAL DE EMPAQUE" (AddNegocio vs
-# AddNegocioFacturador de logica.txt).
+# Negocio/negocio_facturador/servicio FIJOS. Ambos (negocio y negocio_facturador) usan
+# "MATERIAL DE EMPAQUE" (decisión del usuario: en el PQ original el facturador venía sin "DE"
+# — AddNegocio vs AddNegocioFacturador de logica.txt — aquí se unifica con "DE").
 MATERIAL_NEGOCIO = "MATERIAL DE EMPAQUE"
-MATERIAL_NEGOCIO_FACTURADOR = "MATERIAL EMPAQUE"
+MATERIAL_NEGOCIO_FACTURADOR = "MATERIAL DE EMPAQUE"
 MATERIAL_SERVICIO = "ALMACENAMIENTO PALLET BODEGA 8 ME GENERAL"
 
 # Falabella (Paso 13): ficheros falabella_cons* en CONSUMER/ y falabella_prof* en

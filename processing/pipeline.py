@@ -1927,8 +1927,9 @@ def _run_planta_pipeline(emit, progress=None) -> list[dict]:
 def _mat_servicio(negocio: str, nf: str, servicio: str, valor, unidades: int = 0) -> dict:
     """Construye la (única) línea de servicio de MATERIAL con sus constantes (logica.txt).
 
-    Todas las constantes vienen fijas en la query `FilesOcupacionMaterial`. OJO:
-    `negocio_facturador` = "MATERIAL EMPAQUE" (SIN "DE"), distinto a `negocio`.
+    Todas las constantes vienen fijas en la query `FilesOcupacionMaterial`. Aquí
+    `negocio_facturador` = "MATERIAL DE EMPAQUE" (igual que `negocio`; en el PQ original
+    venía sin "DE", pero se unifica por decisión del usuario).
     """
     return {
         "negocio": negocio,
@@ -1968,7 +1969,7 @@ def _run_material_pipeline(
     3. `valor = ceil(promedio(cant_bodega_8))` sobre los días en rango
        (`Number.RoundUp(List.Average([valor]))` del PQ).
     4. Servicio final (**una línea**): `negocio = "MATERIAL DE EMPAQUE"`,
-       `negocio_facturador = "MATERIAL EMPAQUE"` (sin "DE"), `servicio = "ALMACENAMIENTO
+       `negocio_facturador = "MATERIAL DE EMPAQUE"`, `servicio = "ALMACENAMIENTO
        PALLET BODEGA 8 ME GENERAL"`, `unidades = 0`, `proceso_extendido = "PALLETS"`,
        `macro_proceso = "ALMACENAMIENTO"`, `proceso_abreviado = "WHS"`, `tabla = "MATERIAL"`.
        Convención del bot: si `valor = 0` se omite.

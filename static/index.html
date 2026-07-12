@@ -9,11 +9,8 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <div class="logo">H</div>
-      <div>
-        <h1>Facturador Henkel</h1>
-        <p class="subtitle">Salidas CONSUMER + PROFESIONAL · Destrucción</p>
-      </div>
+      <img src="logo.webp" alt="Rhenus" class="logo-img" />
+      <h1>Facturador Henkel</h1>
     </div>
     <div id="statusPill" class="pill pill-idle">Listo</div>
   </header>
@@ -48,6 +45,9 @@
 
     <!-- Banner de errores de validación -->
     <div id="banner" class="banner hidden"></div>
+
+    <!-- Aviso flotante de éxito (descarga lista) -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <p class="hint">
       Elige el rango de fechas y pulsa <strong>Generar</strong>. Verás el avance del proceso

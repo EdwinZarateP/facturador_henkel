@@ -169,6 +169,8 @@ function onFinish(state) {
     $("progressNote").className = "progress-note progress-ok";
     $("progressNote").textContent = `Proceso terminado${t ? ` en ${t}` : ""}. Ya puedes descargar el Excel.`;
     setButtons({ generar: true, exportar: true });
+    launchConfetti();
+    notifyDone(`Facturación lista${t ? ` (${t})` : ""}. Ya puedes descargar el Excel.`);
     return;
   }
   // Terminó sin bloqueo pero sin resultado (p. ej. nada que facturar en el rango).
@@ -259,6 +261,86 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   })[c]);
+}
+
+// ---- Confetti (vanilla JS, sin dependencias) ----
+let confettiCanvas = null;
+let confettiRAF = null;
+function launchConfetti(durationMs = 3500) {
+  if (!confettiCanvas) {
+    confettiCanvas = document.createElement("canvas");
+    confettiCanvas.id = "confetti-canvas";
+    document.body.appendChild(confettiCanvas);
+    window.addEventListener("resize", () => {
+      confettiCanvas.width = window.innerWidth;
+      confettiCanvas.height = window.innerHeight;
+    });
+  }
+  const canvas = confettiCanvas;
+  const ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  const colors = ["#0d7377", "#1e3a8a", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+  const N = 170;
+  const pieces = [];
+  for (let i = 0; i < N; i++) {
+    pieces.push({
+      x: Math.random() * canvas.width,
+      y: -20 - Math.random() * canvas.height * 0.6,
+      r: 6 + Math.random() * 7,
+      color: colors[(Math.random() * colors.length) | 0],
+      vx: -2 + Math.random() * 4,
+      vy: 2 + Math.random() * 3.5,
+      rot: Math.random() * Math.PI,
+      vrot: -0.2 + Math.random() * 0.4,
+      shape: Math.random() < 0.5 ? "rect" : "circle",
+    });
+  }
+
+  if (confettiRAF) cancelAnimationFrame(confettiRAF);
+  const start = performance.now();
+  const tick = (now) => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let alive = 0;
+    for (const p of pieces) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.05; // gravedad suave
+      p.rot += p.vrot;
+      if (p.y < canvas.height + 40) alive++;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      if (p.shape === "rect") ctx.fillRect(-p.r / 2, -p.r / 2, p.r, p.r * 0.6);
+      else { ctx.beginPath(); ctx.arc(0, 0, p.r / 2, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+    }
+    if (now - start < durationMs && alive > 0) {
+      confettiRAF = requestAnimationFrame(tick);
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      confettiRAF = null;
+    }
+  };
+  confettiRAF = requestAnimationFrame(tick);
+}
+
+// ---- Toast de éxito + notificación de escritorio (si ya está permitida) ----
+let toastTimer = null;
+function showToast(html, ms = 6000) {
+  const t = $("toast");
+  t.innerHTML = html;
+  t.classList.add("show");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), ms);
+}
+function notifyDone(msg) {
+  showToast("✅ " + msg);
+  if ("Notification" in window && Notification.permission === "granted") {
+    try { new Notification("Facturador Henkel", { body: msg }); } catch { /* ignora */ }
+  }
 }
 
 // ---- Eventos ----
