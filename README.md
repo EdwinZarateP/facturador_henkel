@@ -993,9 +993,14 @@ proceso_extendido, macro_proceso, proceso_abreviado, tabla`.
   por posición (`SALIDAS_FAST_POSITIONS`) con verificación por nombre y **fallback
   robusto** (lectura completa + nombre) si el layout cambia.
 - **`huellas.xlsx`**: encabezados en la **fila 2** (`header=1`). Tiene ~26 `Producto`
-  duplicados; se desempatan por `Fecha actualizacion` más reciente. (El archivo real
-  es una foto única por producto; la lógica de `logica.txt` asumía capacidad por
-  `(idh, fecha)` — ver "Diferencias con Power BI".)
+  duplicados; se desempata quedándose con el **primer valor único que tenga dato correcto**
+  (pallet y caja presentes y > 0), en el orden del archivo — `io_utils.read_huellas` ordena
+  las filas válidas primero y hace `drop_duplicates(keep="first")`. La primera aparición de
+  cada producto es la huella buena; un batch erróneo appended al final (p. ej. el 2025-10-11
+  con valores absurdos como 900000/477000000) **no** la pisa. Afecta a TODOS los pasos que
+  cruzan huellas (SALIDAS, INGRESOS, MAQUILA, EXPORTACIONES). El archivo se relee cada
+  ejecución (se actualiza todos los meses). (El archivo real es una foto por producto; la
+  lógica de `logica.txt` asumía capacidad por `(idh, fecha)` — ver "Diferencias con Power BI".)
 - Se **ignoran** los archivos `~$*.xlsx` (bloqueo de Excel abierto).
 
 ---
@@ -1219,8 +1224,10 @@ El usuario construye **paso a paso**:
   `fecha_inicial/fecha_final`, filtra `Fecha factura` ahí). El bot usa un **rango libre**
   del calendario. (`rangos_fechas_facturacion.xlsx` existe pero no se usa.)
 - **Huellas**: `logica.txt` une por `(material, fecha)` sobre una huella con capacidad por
-  fecha; el `huellas.xlsx` real es una **foto única** por producto, así que el bot desempata
-  por `Fecha actualizacion` más reciente.
+  fecha; el `huellas.xlsx` real es una **foto por producto** con duplicados, así que el bot
+  se queda con el **primer valor correcto** de cada producto (orden del archivo). Evita que
+  un batch corrupto appended al final (2025-10-11) pise la huella buena — esto era lo que
+  hacía que `RECIBO PALLETS ME` diera 55 en vez de 63 (materiales 2184249 y 2472922).
 - **`fecha` como dimensión**: Power BI agrupa también por la fecha del archivo; el bot no.
 - **Forma del output**: Power BI **desdinamiza** las medidas en filas (`atributo`/`valor`);
   el bot lo hace para clasificar el servicio y luego **agrupa por `servicio`** (suma

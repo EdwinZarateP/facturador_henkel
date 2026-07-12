@@ -1033,9 +1033,19 @@ def read_equivalencias() -> tuple[pd.DataFrame, int]:
 def read_huellas() -> tuple[pd.DataFrame, int]:
     """Lee huellas.xlsx (cabecera en fila 2) -> ([producto, pallet, caja], n_duplicados).
 
-    Desempata los Producto duplicados quedándose con la fila de
-    Fecha actualizacion más reciente.
+    Desempata los Producto duplicados quedándose con el PRIMER valor único que tenga
+    dato correcto (pallet y caja presentes, numéricos y > 0); los registros que vienen
+    detrás se descartan. Esto afecta a TODOS los pasos que cruzan huellas (SALIDAS,
+    INGRESOS, MAQUILA, EXPORTACIONES).
+
+    El archivo se relee en cada ejecución porque se actualiza todos los meses y muy
+    probablemente llegue con duplicados. La regla "primer valor correcto" evita que un
+    batch erróneo appended al final (p. ej. el 2025-10-11 con valores absurdos) pise la
+    huella buena: la primera aparición de cada producto en el orden del archivo es la
+    válida.
     """
+    import numpy as np
+
     path = config.FILES["huellas"]
     df = pd.read_excel(path, header=config.HUELLAS_HEADER_ROW, engine=excel_engine())
     cols = list(df.columns)
@@ -1043,19 +1053,26 @@ def read_huellas() -> tuple[pd.DataFrame, int]:
     out["producto"] = df[find_column(cols, config.HUELLAS_COLS["producto"])]
     out["pallet"] = pd.to_numeric(df[find_column(cols, config.HUELLAS_COLS["pallet"])], errors="coerce")
     out["caja"] = pd.to_numeric(df[find_column(cols, config.HUELLAS_COLS["caja"])], errors="coerce")
-
-    # Desempate por recencia si existe la columna de fecha de actualización.
-    dup_count = int(out["producto"].duplicated(keep=False).sum())
-    try:
-        fupd = pd.to_datetime(df[find_column(cols, config.HUELLAS_COLS["fupd"])], errors="coerce")
-        out["_fupd"] = fupd
-        out = out.sort_values("_fupd", na_position="first")
-        out = out.drop_duplicates(subset=["producto"], keep="last").drop(columns=["_fupd"])
-    except KeyError:
-        out = out.drop_duplicates(subset=["producto"], keep="first")
-
+    # Normaliza la llave ANTES del desempate (mismo criterio que el cruce downstream).
     out["producto"] = out["producto"].astype(str).str.strip().str.upper()
-    return out, dup_count
+
+    # Dato correcto: pallet y caja presentes y > 0.
+    dup_count = int(out["producto"].duplicated(keep=False).sum())
+    out["_valid"] = (
+        out["pallet"].notna() & (out["pallet"] > 0)
+        & out["caja"].notna() & (out["caja"] > 0)
+    )
+    out["_ord"] = np.arange(len(out))
+    # Filas válidas primero y, dentro de cada grupo, por orden del archivo: drop_duplicates
+    # keep="first" deja el primer valor único correcto. Si un producto no tuviera ninguna
+    # fila válida, se queda con su primera aparición (pallet/caja NaN, como antes).
+    out = (
+        out.sort_values(["_valid", "_ord"], ascending=[False, True], kind="stable")
+        .drop(columns=["_valid", "_ord"])
+        .drop_duplicates(subset=["producto"], keep="first")
+    )
+
+    return out.reset_index(drop=True), dup_count
 
 
 def read_tarifas() -> pd.DataFrame:
