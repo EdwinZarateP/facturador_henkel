@@ -368,6 +368,39 @@ FALABELLA_GLOBS = {
 FALABELLA_COLS = {"entrega": "Entrega"}
 FALABELLA_SERVICIO = "ETIQUETADO (FALABELLA)"
 
+# Otros (Paso 14): fichero `otros_<fecha>.xlsx` en OTROS/ (junto a ocupacionMaterial_*).
+# Es una tabla de servicios PRE-ARMADOS a mano (cánones de arrendamiento, horas extras,
+# cargues expo puntuales, descargues, sobre-costos…): ya trae `valor`/`tarifa`/`costo`
+# calculados, así que el bot NO calcula nada, sólo anexa las filas a la hoja Servicios
+# (traducción de la query `otros` de logica.txt líneas 1–41).
+#   - **Sin filtro de fecha**: la `fecha` del contenido se descarta (el PQ la quita en
+#     línea 31 y usa la del NOMBRE del archivo); el bot usa `periodo` (como
+#     Etiquetas/Paletizado/Falabella). Se anexan TODAS las filas.
+#   - **`tabla` = "OTROS" fija** para todos los registros (decisión del usuario; el archivo
+#     trae OTROS/ALM/OUB pero se ignora — no se lee la columna).
+#   - `tarifa`/`costo` pueden venir como texto moneda ("$ 13.933.333") -> io_utils._parse_dinero
+#     los limpia a número; `valor`/`tarifa`/`costo` se parsean a number (línea 33 del PQ).
+#   - Se inyecta DESPUÉS de `_apply_tarifas` (estos servicios no están en tarifas.xlsx y
+#     además `valor` puede ser decimal: los cánones vienen prorrateados, 68.16, 5.73…).
+OTROS_GLOB = "otros*.[xX][lL][sS][xX]"
+OTROS_COLS = {
+    "negocio": "negocio",
+    "negocio_facturador": "negocio_facturador",
+    "servicio": "servicio",
+    "valor": "valor",
+    "proceso_extendido": "proceso_extendido",
+    "macro_proceso": "macro_proceso",
+    "proceso_abreviado": "proceso_abreviado",
+    "tarifa": "tarifa",
+    "costo": "costo",
+}
+# `tabla` NO se lee del archivo: todos los registros de otros llevan tabla "OTROS" fija
+# (decisión del usuario; el archivo trae OTROS/ALM/OUB pero se ignora).
+OTROS_TABLA = "OTROS"
+# Columnas obligatorias: si falta alguna en el archivo -> BlockingError (archivo roto).
+# `tarifa`/`costo` deben existir como columna (una celda vacía -> None, no detiene).
+OTROS_REQUIRED = ("negocio", "servicio", "valor")
+
 # equivalencias_almacenamiento.xlsx (join de Ocupación). `archivo` (= Tipo de ubicación,
 # p. ej. "PALLET (MEDIO)") es la llave; `conversion` es el valor que forma el servicio
 # ("MEDIO PALLET") y se conserva tal cual (no se normaliza agresivamente: lleva espacios).

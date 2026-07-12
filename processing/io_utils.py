@@ -886,6 +886,109 @@ def find_falabella_files(base_dir: Optional[Path] = None):
 
 
 # ---------------------------------------------------------------------------
+# Lectura de otros (otros_<fecha>): Paso 14
+# ---------------------------------------------------------------------------
+
+def _parse_dinero(value):
+    """Convierte un valor de `tarifa`/`costo` (que puede venir como texto moneda) a float.
+
+    El archivo otros_* trae estos campos como `object` (mezcla): números puros
+    (`62895.4147`, `93759.7371`) y texto moneda colombiano (`"$ 13.933.333"`,
+    `"$   6.348.884"`). Power Query los convierte con `type number` (línea 33); aquí se
+    replica la limpieza:
+
+    - int/float -> float(value) (NaN/None -> None).
+    - str -> quitar `$`, espacios; si hay "," y "." asumir formato europeo (punto=miles,
+      coma=decimal); si hay >1 "." son miles; 1 "." -> decimal. No parseable -> None.
+    """
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if s in ("", "-", "nan", "None"):
+        return None
+    s = s.replace("$", "").replace(" ", "").replace("\xa0", "")
+    if "," in s and "." in s:
+        # p. ej. "13.933.333,50" -> punto=miles, coma=decimal.
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        # sólo coma -> decimal.
+        s = s.replace(",", ".")
+    elif s.count(".") > 1:
+        # varios puntos -> miles (p. ej. "13.933.333").
+        s = s.replace(".", "")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def read_otros(path: Path) -> pd.DataFrame:
+    """Lee un archivo `otros_*` y devuelve las 9 columnas que el bot anexa al Excel.
+
+    A diferencia del resto de pasos, este archivo es una tabla de servicios **pre-armados**
+    (cánones, horas extras, cargues expo, descargues…): ya trae `valor`/`tarifa`/`costo`
+    calculados. No se calcula nada aquí; sólo se leen y se parsean a número. Las columnas
+    `fecha` y `tabla` del contenido **no se leen**: el PQ descarta `fecha` (línea 31; la
+    final viene del NOMBRE del archivo, que el bot reemplaza por `periodo`), y `tabla` se
+    fija a "OTROS" para todos los registros (decisión del usuario). Molde `read_etiquetas`
+    (lectura por nombre con find_column; sin área, pues el `negocio` viene del propio archivo).
+
+    Lanza KeyError si faltan columnas obligatorias (OTROS_REQUIRED) -> la pipeline lo
+    convierte en BlockingError.
+    """
+    engine = excel_engine()
+    xls = pd.ExcelFile(path, engine=engine)
+    last_err = None
+    for sheet in xls.sheet_names:
+        try:
+            df = xls.parse(sheet_name=sheet)
+        except Exception as exc:
+            last_err = exc
+            continue
+        if df is None or df.empty:
+            continue
+        cols = list(df.columns)
+        try:
+            out = pd.DataFrame()
+            out["negocio"] = df[find_column(cols, config.OTROS_COLS["negocio"])]
+            out["negocio_facturador"] = df[find_column(cols, config.OTROS_COLS["negocio_facturador"])]
+            out["servicio"] = df[find_column(cols, config.OTROS_COLS["servicio"])]
+            out["valor"] = pd.to_numeric(
+                df[find_column(cols, config.OTROS_COLS["valor"])], errors="coerce"
+            )
+            out["proceso_extendido"] = df[find_column(cols, config.OTROS_COLS["proceso_extendido"])]
+            out["macro_proceso"] = df[find_column(cols, config.OTROS_COLS["macro_proceso"])]
+            out["proceso_abreviado"] = df[find_column(cols, config.OTROS_COLS["proceso_abreviado"])]
+            out["tarifa"] = df[find_column(cols, config.OTROS_COLS["tarifa"])].map(_parse_dinero)
+            out["costo"] = df[find_column(cols, config.OTROS_COLS["costo"])].map(_parse_dinero)
+        except KeyError:
+            # Esta hoja no tiene las columnas esperadas; probar la siguiente.
+            continue
+        return out
+    raise KeyError(
+        f"El archivo {path.name} no tiene una hoja legible con las columnas esperadas "
+        f"de otros (negocio/negocio_facturador/servicio/valor/proceso_*/tarifa/costo). "
+        f"{last_err or ''}"
+    )
+
+
+def find_otros_files(base_dir: Optional[Path] = None) -> list[Path]:
+    """Localiza los archivos `otros*` (excluye ~$).
+
+    El fichero `otros_<fecha>.xlsx` vive en la carpeta OTROS/ (junto a
+    `ocupacionMaterial_*`), así que se hace glob de `otros*` sobre esa carpeta. Como el
+    `negocio` viene del propio archivo (no del nombre ni de la carpeta), no se devuelve área.
+    """
+    base = Path(base_dir) if base_dir else config.BASE_DIR
+    folder = config.DIRS["otros"]
+    if not folder.exists():
+        return []
+    return _exclude_locks(sorted(folder.glob(config.OTROS_GLOB)))
+
+
+# ---------------------------------------------------------------------------
 # Lectura de tablas de lookup
 # ---------------------------------------------------------------------------
 

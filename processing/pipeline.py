@@ -2141,6 +2141,113 @@ def _run_falabella_pipeline(emit, progress=None) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Pipeline OTROS (Paso 14) — servicios pre-armados (anexar sin calcular)
+# ---------------------------------------------------------------------------
+
+def _otros_servicio(row: dict, periodo: str) -> dict:
+    """Construye una línea de servicio de OTROS a partir de una fila del archivo.
+
+    El archivo otros_* es una tabla pre-armada: ya trae `valor`/`tarifa`/`costo` y las
+    columnas descriptivas. Aquí sólo se mapean al esquema del Excel: `costo` -> `costo_total`,
+    se añaden `periodo` (del rango), `unidades` = 0 y `um` = "" (no aplica). `tabla` es **fija
+    "OTROS"** para todos los registros (decisión del usuario: el archivo trae OTROS/ALM/OUB
+    pero se ignora). Los NaN de texto se blanquean a "" para no volcar cadenas "nan".
+    """
+    def _text(v):
+        return "" if v is None or (isinstance(v, float) and pd.isna(v)) else v
+
+    return {
+        "periodo": periodo,
+        "negocio": _text(row.get("negocio")),
+        "negocio_facturador": _text(row.get("negocio_facturador")),
+        "servicio": _text(row.get("servicio")),
+        "valor": row.get("valor"),
+        "unidades": 0,
+        "um": "",
+        "tarifa": row.get("tarifa"),
+        "costo_total": row.get("costo"),
+        "proceso_extendido": _text(row.get("proceso_extendido")),
+        "macro_proceso": _text(row.get("macro_proceso")),
+        "proceso_abreviado": _text(row.get("proceso_abreviado")),
+        "tabla": config.OTROS_TABLA,
+    }
+
+
+def _run_otros_pipeline(periodo: str, emit, progress=None) -> list[dict]:
+    """Paso 14 (OTROS): anexa los servicios pre-armados de otros* a la hoja Servicios.
+
+    A diferencia de los Pasos 1–13, el archivo `otros_<fecha>.xlsx` es una tabla de
+    servicios **pre-armados a mano** (cánones de arrendamiento, horas extras, cargues expo,
+    descargues, sobre-costos…): ya trae `valor`, `tarifa` y `costo` calculados por el
+    usuario. El bot NO calcula nada; sólo los anexa (traducción de la query `otros` de
+    logica.txt líneas 1–41).
+
+    - **Sin filtro de fecha**: el PQ descarta la `fecha` del contenido (línea 31) y usa la
+      del NOMBRE del archivo; el bot la descarta y usa `periodo` (como
+      Etiquetas/Paletizado/Falabella). Se anexan TODAS las filas.
+    - Filtra `negocio <> null` (líneas 30 y 39 del PQ).
+    - `valor`/`tarifa`/`costo` vienen ya como número (io_utils parseó `tarifa`/`costo`
+      incluida la moneda "$"). `valor` puede ser **decimal** (cánones prorrateados).
+    - **`tabla` = "OTROS" fija** para todos los registros (decisión del usuario; el archivo
+      trae OTROS/ALM/OUB pero se ignora — no se lee la columna `tabla`).
+    - `unidades` = 0, `um` = "" (no aplica), `costo` -> `costo_total`. **No se recalcula**
+      el costo: en algunas filas `costo != valor × tarifa` (p. ej. traslados de pallets).
+    - **No agrupa**: 1 fila del archivo -> 1 fila del Excel (el PQ no hace groupby).
+
+    Se inyecta en `run_all` **DESPUÉS de `_apply_tarifas`** porque estos servicios no están
+    en `tarifas.xlsx` (se eliminarían) y además `valor` puede ser decimal (`_aggregate_servicos`
+    lo truncaría a int).
+
+    Sin archivos -> warning y []. Error de lectura -> BlockingError.
+    """
+    def p(stage, pct):
+        if progress:
+            progress(stage, pct)
+
+    p("Procesando otros…", 97)
+    files = io_utils.find_otros_files()
+    if not files:
+        emit(
+            {
+                "severity": "warning",
+                "msg": "No se encontraron archivos otros* (Paso 14 omitido).",
+            }
+        )
+        return []
+
+    frames = []
+    for path in files:
+        try:
+            frames.append(io_utils.read_otros(path))
+        except Exception as exc:  # corrupto, sin columnas obligatorias, hoja rara
+            raise BlockingError(
+                f"{path.name}: no se pudo leer el archivo de otros ({exc})."
+            ) from exc
+
+    otros = pd.concat(frames, ignore_index=True)
+    if otros.empty:
+        emit(
+            {
+                "severity": "warning",
+                "msg": "Los archivos de otros están vacíos (Paso 14 omitido).",
+            }
+        )
+        return []
+
+    # Filtrar negocio <> null (logica.txt: #"Filas filtradas1" / #"Filas filtradas").
+    otros = otros.loc[otros["negocio"].notna()].copy()
+
+    # Servicios finales: 1 fila -> 1 línea (no se agrupa). Omite filas con valor nulo.
+    servicios = []
+    for row in otros.to_dict(orient="records"):
+        valor = row.get("valor")
+        if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+            continue
+        servicios.append(_otros_servicio(row, periodo))
+    return servicios
+
+
+# ---------------------------------------------------------------------------
 # Orquestador: SALIDAS + DESTRUCCIÓN + INGRESOS + OCUPACIÓN
 # ---------------------------------------------------------------------------
 
@@ -2197,7 +2304,7 @@ def _apply_tarifas(servicios: list[dict], emit) -> list[dict]:
       Si hubiera varias filas para el mismo `servicio` con `valor` distinto, gana la última
       y se avisa (en la hoja activa actual no ocurre: 1 fila por servicio).
     - Para cada línea con match: añade `um`, `tarifa` (= tarifas.valor) y `costo_total` =
-      `valor × tarifa` redondeado a 2 decimales.
+      `valor × tarifa` redondeado a 4 decimales.
     - Las líneas **sin tarifa** se **eliminan del Excel** (decisión del usuario: "las que no
       no las debes tener en cuenta en el excel final"). **No se reportan**: no impiden facturar
       (son servicios que simplemente no tienen tarifa configurada); el panel de avisos es solo
@@ -2266,7 +2373,7 @@ def _apply_tarifas(servicios: list[dict], emit) -> list[dict]:
         tar = lookup.get(key)
         if tar is None or tar["tarifa"] is None:
             continue
-        costo = round(valor_num * tar["tarifa"], 2)
+        costo = round(valor_num * tar["tarifa"], 4)
         s2 = dict(s)
         s2["um"] = tar["um"]
         s2["tarifa"] = tar["tarifa"]
@@ -2280,7 +2387,7 @@ def run_all(start: str, end: str, *, progress=None, on_issue=None) -> Step1Resul
     """Ejecuta Paso 1 (SALIDAS) + Paso 2 (DESTRUCCIÓN) + Paso 3 (INGRESOS) +
     Paso 4 (OCUPACIÓN) + Paso 5 (TRASLADOS) + Paso 6 (MAQUILA) + Paso 7 (EXPORTACIONES)
     + Paso 8 (ETIQUETAS) + Paso 9 (PALETIZADO) + Paso 10 (TRINCAJE) + Paso 11 (PLANTA)
-    + Paso 12 (MATERIAL) + Paso 13 (FALABELLA) y combina los servicios.
+    + Paso 12 (MATERIAL) + Paso 13 (FALABELLA) + Paso 14 (OTROS) y combina los servicios.
 
     Lanza ValueError ante rango inválido y BlockingError ante errores graves de
     archivo. `progress(stage, percent)` y `on_issue(issue)` permiten a la API
@@ -2362,6 +2469,11 @@ def run_all(start: str, end: str, *, progress=None, on_issue=None) -> Step1Resul
     # Tarifa → costo: cruza por `servicio` con tarifas.xlsx, calcula costo_total y
     # elimina las líneas sin tarifa (y las de valor 0).
     servicios = _apply_tarifas(servicios, emit)
+    # Paso 14: OTROS (servicios pre-armados). Se inyecta DESPUÉS de _apply_tarifas porque
+    # no están en tarifas.xlsx (se eliminarían) y además `valor` puede ser decimal
+    # (cánones prorrateados, que _aggregate_servicios truncaría a int).
+    otros_services = _run_otros_pipeline(periodo, emit, p)
+    servicios = servicios + otros_services
     combined = dict(totals)
     combined["servicios"] = servicios
 
@@ -2587,6 +2699,14 @@ def default_date_range() -> dict:
 
 if __name__ == "__main__":
     import json
+    import sys
+
+    # La consola de Windows (cp1252) rompe con emojis/acentos del Excel de otros;
+    # forzar UTF-8 para que el diagnóstico se imprima completo.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
     try:
         res = run_all("20/05/2026", "19/06/2026")
@@ -2610,6 +2730,7 @@ if __name__ == "__main__":
     pla_n = sum(1 for s in res.totals["servicios"] if s["tabla"] == "PLANTA")
     mat_n = sum(1 for s in res.totals["servicios"] if s["tabla"] == "MATERIAL")
     fal_n = sum(1 for s in res.totals["servicios"] if s["tabla"] == "FALABELLA")
+    otros_n = sum(1 for s in res.totals["servicios"] if s["tabla"] == "OTROS")
     print(
         f"\nFilas en rango: {res.diagnostics.get('rows_in_range')} | "
         f"Estibas: {res.totals.get('total_estibas')} | Cajas: {res.totals.get('total_cajas')}"
@@ -2621,7 +2742,7 @@ if __name__ == "__main__":
         f"EXPORTACIONES: {expo_n} líneas | ETIQUETAS: {etiq_n} líneas | "
         f"PALETIZADO: {pal_n} líneas | TRINCAJE: {tri_n} líneas | "
         f"PLANTA: {pla_n} líneas | MATERIAL: {mat_n} líneas | "
-        f"FALABELLA: {fal_n} líneas | "
+        f"FALABELLA: {fal_n} líneas | OTROS: {otros_n} líneas | "
         f"total {len(res.totals['servicios'])}"
     )
     print("\nLíneas de servicio:")

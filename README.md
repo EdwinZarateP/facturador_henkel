@@ -41,6 +41,11 @@ grave el proceso se **detiene** y lo indica para que lo corrijas) y luego
 >   `negocio = MATERIAL DE EMPAQUE`);
 >   **Paso 13 (Falabella)** que suma líneas `ETIQUETADO (FALABELLA)` a la misma hoja
 >   (conteo de filas con `Entrega <> null` por `negocio`, sin filtro de fecha);
+>   **Paso 14 (Otros)** que **anexa** los servicios pre-armados de `OTROS/otros_*.xlsx`
+>   (cánones de arrendamiento, horas extras, cargues expo, descargues, sobre-costos…) a
+>   la misma hoja — el archivo ya viene con su `valor`/`tarifa`/`costo` calculados, así que
+>   no se calcula nada: se respetan tal cual (con tabla `OTROS` fija), sin filtro de
+>   fecha (se anexan todas las filas); se inyecta **tras** `_apply_tarifas`;
 >   **proceso en segundo plano con barra de avance** y **detención ante errores graves**
 >   de archivo (corrupto / mal formato / faltante).
 > - **Pendiente:** `RANGOS_FECHAS`. (Tarifa → costo **HECHO**: cada línea se cruza por
@@ -835,6 +840,89 @@ línea `ETIQUETADO (FALABELLA)` por negocio y se suma a la misma hoja **Servicio
 
 ---
 
+## Paso 14 (Otros) — ✅ HECHO
+
+> Especificación (ya implementada). Traducción de la query `otros` de `logica.txt`
+> (Power Query, líneas 1–41). **Distinto a todos los pasos anteriores**: el archivo
+> `otros_*.xlsx` no trae datos crudos que haya que calcular, sino una **tabla de servicios
+> pre-armados a mano** (cánones de arrendamiento, horas extras, cargues expo puntuales,
+> descargues, sobre-costos, cotizaciones…). Ya viene con sus `valor`, `tarifa` y `costo`
+> calculados por el usuario, así que el bot **no calcula nada**: los **anexa** a la hoja
+> Servicios respetando lo que trae. El fichero `otros_<fecha>.xlsx` vive en **`OTROS/`**
+> (junto a `ocupacionMaterial_*` del Paso 12).
+
+**Adaptaciones (mismo patrón que TRASLADOS/ETIQUETAS/FALABELLA):**
+1. **Sin filtro de fecha**: el PQ descarta la columna `fecha` del contenido (línea 31) y
+   toma la fecha del **nombre** del archivo, que el bot descarta y reemplaza por `periodo`.
+   Se anexan **todas** las filas del archivo.
+2. **`tabla` = "OTROS" fija** para todos los registros (decisión del usuario): el archivo
+   trae OTROS/ALM/OUB en su columna `tabla`, pero se **ignora** — en el Excel todas las filas
+   de este paso llevan tabla `OTROS`.
+
+**Datos verificados** (`otros_01-06-2026.xlsx`, 33 filas, `Sheet1`, en `OTROS/`):
+- Columnas en el fuente: `negocio, negocio_facturador, servicio, valor, proceso_extendido,
+  macro_proceso, proceso_abreviado, tabla, tarifa, costo, fecha`. El PQ **descarta `fecha`**
+  (la final viene del nombre), así que el bot lee las otras 10.
+- `tabla` en el fuente: OTROS (28), ALM (4), OUB (1) — **pero se ignora**: en el Excel todas
+  llevan tabla `OTROS` (decisión del usuario).
+- `negocio`: PROFESIONAL 20, CONSUMER 13. `negocio_facturador`: PROFESIONAL 20, CONSUMER 9,
+  LAUNDRY 4.
+- `valor`: 0 nulos, 0 ceros; **algunos decimales** (cánones prorrateados: 68.16, 5.73…),
+  a diferencia del resto de pasos que son enteros.
+- `tarifa`/`costo`: dtype `object` — mezcla de número (`62895.4147`) y **texto moneda**
+  (`"$ 13.933.333"`, `"$   6.348.884"`); `io_utils._parse_dinero` los limpia a `float`
+  (replicando el `type number` del PQ, línea 33).
+
+**Lógica a traducir (paso a paso):**
+1. Lee `otros*` de `OTROS/`: las 10 columnas (sin `fecha`).
+2. Filtra filas con `negocio <> null` (líneas 30 y 39 del PQ).
+3. `valor`/`tarifa`/`costo` → número (`_parse_dinero` para la moneda). Añade `unidades = 0`
+   (línea 35 del PQ).
+4. **No agrupa** (no hay `#"Filas agrupadas"`): **1 fila del archivo → 1 fila del Excel**.
+5. Cada línea se mapea al esquema del Excel: `costo → costo_total`, `periodo` (del rango,
+   `_periodo_for_range(end)`), `um = ""` (no aplica). **No se recalcula el costo**: en
+   algunas filas `costo ≠ valor × tarifa` (p. ej. traslado de pallets con `valor=40` y
+   `costo=13.933.333`) y se respeta el `costo` que viene. Se omiten las filas con `valor`
+   nulo.
+
+> **Inyección TRAS `_apply_tarifas` (clave):** los Pasos 2–13 se suman a `servicios` *antes*
+> de `_aggregate_servicos` y pasan por `_apply_tarifas`. Los de **Otros NO pueden pasar por
+> ahí**: (a) no existen en `tarifas.xlsx` → se eliminarían; (b) `_aggregate_servicos` fuerza
+> `valor` a `int` → perdería los decimales de los cánones. Por eso `_run_otros_pipeline` se
+> llama **después** de `_apply_tarifas` y se concatena directamente a `servicios`.
+
+**Dónde tocar al implementar** (molde: Paso 13 / `_run_falabella_pipeline`, sin `start/end`):
+- `config.py`: `OTROS_GLOB = "otros*.[xX]..."` (sobre `DIRS["otros"]`, ya existente),
+  `OTROS_COLS = {negocio, negocio_facturador, servicio, valor, proceso_extendido,
+  macro_proceso, proceso_abreviado, tarifa, costo}` (sin `tabla`), `OTROS_TABLA = "OTROS"`,
+  `OTROS_REQUIRED` (cols obligatorias → `BlockingError` si faltan).
+- `processing/io_utils.py`: `_parse_dinero(v)` (limpia `$`/puntos de miles/coma decimal),
+  `read_otros(path)` (molde `read_etiquetas`; 9 cols — sin `fecha` ni `tabla`, parsea
+  `valor`/`tarifa`/`costo`), `find_otros_files(base_dir)` (glob `otros*` sobre `DIRS["otros"]`).
+- `processing/pipeline.py`: `_run_otros_pipeline(periodo, emit, progress)` → `list[dict]`;
+  `_otros_servicio` fija `tabla = config.OTROS_TABLA`; wirear en `run_all` **TRAS
+  `_apply_tarifas`** (`servicios = servicios + otros_services`); ampliar `__main__`
+  (conteo `tabla == "OTROS"`).
+- `processing/excel_export.py`: **sin cambios** (las columnas ya cubren OTROS; `valor`
+  decimal es válido).
+
+**Salida esperada** (rango 20/05–19/06/2026, ya calculada): **33 servicios** con tabla
+`OTROS` (el archivo traía 28 OTROS + 4 ALM + 1 OUB, pero todos se vuelcan como OTROS).
+Algunos: `CANON DE ARRENDAMIENTO DE OFICINAS` (CONSUMER 68.16,
+PROFESIONAL 32.82), `ALMACENAMIENTO BODEGA 3` (ALM, 777/153/287), `Auxiliares Extra
+Operación Junio` (OUB, 4), `Horas extras …` (4 líneas), `Re: [EXT] RE: 📦 Cotización BCP
+Junio` (1). Costo total de los 33 ≈ **\$247.779.585**.
+
+> Validación (verificada): `python -m processing.pipeline` da **80 líneas** en la hoja
+> Servicios (las 47 de los pasos 1–13 con tarifa + 33 de OTROS) **sin alterar** los pasos
+> previos y **sin issues**, el parsing de moneda es correcto (`"$ 13.933.333"` → 13933333),
+> `valor` conserva decimales, `tabla` = **OTROS** para todas y el costo total da
+> **\$1.675.172.793**.
+> Sin `otros*` → advertencia y se omite (no detiene); los 47 servicios previos intactos.
+> Archivo obligatorio roto (sin `negocio`/`servicio`/`valor`/`tabla`) → `BlockingError`.
+
+---
+
 ## Tarifa → costo (dinero) — ✅ HECHO
 
 Después de `_aggregate_servicios`, `_apply_tarifas` (en `processing/pipeline.py`) cruza cada
@@ -845,7 +933,7 @@ línea agregada con `tarifas.xlsx` y calcula el costo:
   activa de `tarifas.xlsx` (hoja `Sheet1`, una tarifa por servicio; la hoja `todos` es histórico
   y no se usa). Si el mismo `servicio` tuviera tarifas distintas, gana la última + aviso.
 - **Columnas añadidas** a cada línea: `um`, `tarifa` (= `tarifas.valor`) y
-  `costo_total = valor × tarifa` (redondeado a 2 decimales). `valor` sigue siendo la **cantidad**
+  `costo_total = valor × tarifa` (redondeado a 4 decimales). `valor` sigue siendo la **cantidad**
   (no se renombra).
 - **No aparecen en el Excel final** (decisión del usuario):
   - las líneas **sin tarifa** (servicio no encontrado en `tarifas.xlsx`) — se omiten
@@ -866,7 +954,9 @@ proceso_extendido, macro_proceso, proceso_abreviado, tabla`.
 > `tarifas.xlsx` — son las variantes `PALLETS`/`UNIDADES`/`UND` donde tarifas sólo trae la versión
 > `CAJAS`, más `CAJAS ESTANDAR LAUNDRY` y `DESTELLE UNIDADES CROSS DOCKING`. Para que facturen,
 > hay que añadir esas tarifas a `tarifas.xlsx` (hoja `Sheet1`); al hacerlo se rellenan solas, sin
-> tocar código. El Excel del baseline queda con **47 líneas**, costo total ≈ **\$1.427.393.208**.
+> tocar código. Los pasos 1–13 dejan **47 líneas** con tarifa; sumando las **33 de OTROS** (Paso 14,
+> que se inyecta tras `_apply_tarifas` y no se filtra), el Excel del baseline queda con **80 líneas**,
+> costo total ≈ **\$1.675.172.793**.
 
 ---
 
@@ -920,7 +1010,7 @@ processing/
   io_utils.py          # lectura robusta de Excel (calamine), normalizador + lectores de lookup
   pipeline.py          # núcleo: SALIDAS + Destrucción + Ingresos + Ocupación + Traslados +
                        #        Maquila + Exportaciones + Etiquetas + Paletizado + Trincaje +
-                       #        Planta + Material + Falabella, AddServicio/FilterServicio,
+                       #        Planta + Material + Falabella + Otros, AddServicio/FilterServicio,
                        #        agrupación por servicio, BlockingError + RunState
                        #        (avance/cronómetro). Puro, sin FastAPI.
   excel_export.py      # escritura del Excel de salida (hoja Servicios)
@@ -941,9 +1031,9 @@ solo transporta entradas/salidas. Los pasos siguientes extienden `pipeline.py`.
 |---|---|---|
 | GET | `/api/tarifas` | tarifas (referencia; para pasos siguientes) |
 | GET | `/api/daterange/default` | min/max de `Fecha factura` para precargar el calendario |
-| POST | `/api/run` | arranca el proceso en segundo plano (los 13 pasos) |
+| POST | `/api/run` | arranca el proceso en segundo plano (los 14 pasos) |
 | GET | `/api/progress` | `{stage, percent, done, blocked, error, issues, has_result, elapsed_seconds}` (sondeo) |
-| GET | `/api/export?start=&end=` | `.xlsx` (hoja **Servicios**: los 13 pasos combinados) |
+| GET | `/api/export?start=&end=` | `.xlsx` (hoja **Servicios**: los 14 pasos combinados) |
 
 Contrato uniforme: `{ok:true,data}` / `{ok:false,error,detail}`.
 
@@ -989,7 +1079,9 @@ El procesamiento distingue dos tipos de problemas:
 - Los cálculos (estibas/cajas) están **vectorizados** con numpy.
 
 ### Línea base validada (regresión) — rango 20/05–19/06/2026
-101.491 filas · estibas 101.852 · cajas 237.822 · **64 líneas de servicio** en la hoja Servicios:
+101.491 filas · estibas 101.852 · cajas 237.822 · **64 líneas de servicio** de los pasos 1–13
+(línea base interna; **+33 de OTROS** = 97 calculadas → **80 en el Excel** tras el filtro de
+tarifa, costo total ≈ **\$1.675.172.793**):
 - **SALIDAS**: 19 líneas agrupadas por `servicio`.
 - **DESTRUCCION**: 2 líneas (CONSUMER 24, PROFESIONAL 3).
 - **INGRESOS**: 6 líneas — `RECIBO CAJAS` (CONSUMER/CONSUMER 304.672, CONSUMER/LAUNDRY 3.997,
@@ -1013,6 +1105,11 @@ El procesamiento distingue dos tipos de problemas:
 - **PLANTA**: 2 líneas — `TRASLADO PALLETS PLANTA - CEDI` (CONSUMER/CONSUMER 2.067, PROFESIONAL/PROFESIONAL 1.293).
 - **MATERIAL**: 1 línea — `ALMACENAMIENTO PALLET BODEGA 8 ME GENERAL` (MATERIAL DE EMPAQUE/MATERIAL EMPAQUE 553 = `ceil` del promedio de 30 días).
 - **FALABELLA**: 1 línea — `ETIQUETADO (FALABELLA)` (PROFESIONAL/PROFESIONAL 114 = 114 filas con `Entrega` no nula; sin `falabella_cons*` no hay línea CONSUMER).
+- **OTROS**: 33 líneas **anexadas pre-armadas** de `OTROS/otros_*.xlsx` (todas con tabla
+  `OTROS`; el archivo traía 28 OTROS + 4 ALM + 1 OUB pero se ignora)
+  — no pasan por el filtro de tarifa (se inyectan tras `_apply_tarifas`); p. ej. `CANON DE
+  ARRENDAMIENTO DE OFICINAS`, `ALMACENAMIENTO BODEGA 3`, `Auxiliares Extra Operación Junio`,
+  `Horas extras …`, con `valor` decimal y `tabla` respetada. Costo ≈ 247,8M.
 
 Solo CONSUMER: 18.943 filas · estibas 19.303 · cajas 148.377 (CONSUMER 18.286 + LAUNDRY 657).
 PROFESIONAL: 61.036 + NATTURA 21.512.
@@ -1029,7 +1126,7 @@ El usuario construye **paso a paso**:
 1. ~~**Tarifa → valor (dinero)**: cruzar `servicio` con `tarifas.xlsx` y multiplicar por `valor`.~~
    **✓ HECHO.** `_apply_tarifas` cruza cada línea agregada por `servicio` con la hoja activa de
    `tarifas.xlsx` (la **fecha no importa**: lookup plano, una tarifa por servicio), añade `um`,
-   `tarifa` y `costo_total = valor × tarifa` (redondeo a 2 decimales), y **elimina** del Excel
+   `tarifa` y `costo_total = valor × tarifa` (redondeo a 4 decimales), y **elimina** del Excel
    las líneas sin tarifa y las de `valor = 0`. Sin mínimo facturable (sólo valor×tarifa). Ver
    sección "Tarifa → costo (dinero)".
 2. ~~**`tipo_trabajo`** desde `ADICIONALES` (entrega → NORMAL / EXTRA E.S).~~ **✓ HECHO.**
@@ -1100,6 +1197,12 @@ El usuario construye **paso a paso**:
     filtro de fecha (el PQ agrupa por la fecha del nombre, que el bot descarta → `periodo`).
     Sumado a la hoja Servicios.~~ **✓ HECHO.** Detalle y salida esperada (1 servicio) en la
     sección "Paso 13 (Falabella) — ✅ HECHO".
+19. ~~**Otros (Paso 14)**: anexar los servicios pre-armados de `OTROS/otros_*.xlsx` (cánones,
+    horas extras, cargues expo, descargues, sobre-costos…) a la hoja Servicios. El archivo ya
+    trae `valor`/`tarifa`/`costo`, así que **no se calcula nada**: se respetan tal cual (con
+    `tabla` OTROS/ALM/OUB), sin filtro de fecha (se anexan todas las filas) y se inyectan
+    **tras `_apply_tarifas`**.~~ **✓ HECHO.** Detalle y salida esperada (33 servicios) en la
+    sección "Paso 14 (Otros) — ✅ HECHO".
 
 ### Diferencias con Power BI (a revisar si se busca paridad exacta)
 
