@@ -1056,9 +1056,10 @@ tolerante. La UI lo muestra en la tarjeta **Fuentes de datos** y lo auto-ejecuta
 la página (botón *Validar fuentes* para repetirlo).
 
 El procesamiento distingue dos tipos de problemas:
-- **Errores graves** (archivo corrupto, mal formato, falta un archivo obligatorio o una
-  columna requerida) **detienen el proceso** y avisan al usuario para que corrija y vuelva
-  a generar. La barra de avance se congela en la etapa donde ocurrió.
+- **Errores graves** (archivo corrupto, mal formato, falta un archivo obligatorio, una
+  columna requerida, o **datos inválidos en celdas clave** — ver *Auditoría de tipos* más
+  abajo) **detienen el proceso** y avisan al usuario para que corrija y vuelva a generar.
+  La barra de avance se congela en la etapa donde ocurrió.
 - **Advertencias** (lookups opcionales ausentes como `huellas`/`idh`/`adicionales`/
   `tipo_despacho`, duplicados, registros sin huella, archivos `destruccion*` vacíos)
   **se reportan pero no detienen**.
@@ -1077,6 +1078,42 @@ El procesamiento distingue dos tipos de problemas:
 - Falta `adicionales*` (todo queda `tipo_trabajo = NORMAL`).
 - Falta `tipo_despacho.xlsx` (todo queda `tipo_despacho = ESTANDAR`).
 - Entregas duplicadas en `adicionales` o CEDI duplicados en `tipo_despacho`.
+- **Auditoría de tipos** (fecha invertida como `02/21/2026`, texto en columna numérica
+  como `s`, o fechas inválidas/no parseables): **detiene el proceso** con detalle
+  `archivo · columna · ejemplo` (ver abajo).
+
+### Auditoría de tipos de datos (fechas y números)
+
+El bot **no se traga silenciosamente** valores inválidos en las columnas que usa para
+filtrar por fecha o para calcular. Al leer cada archivo audita las columnas clave
+**antes** del `errors="coerce"` (que es donde un valor raro se volvería `NaN`/`NaT` sin
+avisar). Si encuentra alguno, **detiene la facturación** (error grave) y lista **todos**
+los problemas de **todas** las fuentes a la vez, con `archivo · columna · ejemplo`, para
+que corrijas y vuelvas a generar.
+
+Detecta (helper `io_utils.audit_value_column`, determinista vía `calendar.monthrange` —
+no depende de la heurística inestable de `dayfirst` de pandas):
+
+- **Fechas** (`Fecha factura`, `Posting Date`, `Fecha`, `fecha` de Material):
+  **formato invertido mes/día** (`02/21/2026` → avisa; `13/02/2026` dd/mm válido **no**
+  avisa), **inválidas/no parseables** (`31/02/2026`, `abc`) y basura. Los `datetime`
+  nativos de Excel (celda fecha real) se aceptan sin auditar. `"05/06/2026"` (ambiguo)
+  **no** se flaggea.
+- **Números** (`Ctd Ent.(UMV)`, `Cantidad`, `Ocupación`, `SHU`, `CON`, `TOTAL`, `cajas`,
+  `cant_bodega_8`, `estibas_consumer/profesional`, `valor`): texto que no es número
+  (`s`). Los vacíos legítimos se ignoran.
+- **Dinero** (`tarifa`/`costo` de Otros): admite texto moneda `$ 13.933.333`; sólo pita
+  lo que `_parse_dinero` no puede convertir.
+
+Excepciones para evitar falsos positivos: `"-"` en `Ocupación` (= 0) es válido;
+`"$ 13.933.333"` en Otros es válido.
+
+**Mecánica:** cada `_run_*_pipeline` audita al leer y, si hay error, salta el cálculo
+(early-return) para no procesar basura; `run_all` sigue al siguiente paso para acumular
+**todos** los problemas y, antes de generar el Excel, lanza `BlockingError` con el conteo
+→ la UI muestra el panel rojo ⛔ con cada problema. Desde consola,
+`python -m processing.pipeline` imprime `PROCESO DETENIDO` + los detalles
+(archivo/columna/ejemplo).
 
 ---
 

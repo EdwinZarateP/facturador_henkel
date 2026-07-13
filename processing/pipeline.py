@@ -256,13 +256,15 @@ def _fn_numero_series(values) -> pd.Series:
 # Carga de datos
 # ---------------------------------------------------------------------------
 
-def _load_all_salidas(strict: bool = True):
+def _load_all_salidas(strict: bool = True, audit: list | None = None):
     """Concatena todos los salidas_cons* y salidas_prof*.
 
     Devuelve (df, archivos_leidos_ok, issues_por_archivo).
     - strict=True (por defecto, para el proceso): ante cualquier archivo que no se
       pueda leer, o si no hay archivos, lanza BlockingError (detiene el proceso).
     - strict=False (calendario por defecto): tolerante, reporta y continúa.
+    - audit: si se pasa una lista, read_salidas añade ahí los issues de auditoría
+      de tipos (fecha/cantidad) por archivo; no detiene la lectura.
     """
     files = io_utils.find_salidas_files()
     if not files:
@@ -275,7 +277,7 @@ def _load_all_salidas(strict: bool = True):
     issues = []
     for path, area in files:
         try:
-            frames.append(io_utils.read_salidas(path, area))
+            frames.append(io_utils.read_salidas(path, area, audit=audit))
             ok_names.append(path.name)
         except Exception as exc:  # archivo corrupto, sin columnas, hoja rara, etc.
             if strict:
@@ -315,8 +317,9 @@ def _run_salidas_pipeline(
 
     # 1) Cargar y concatenar salidas (estricto: error grave si algo falla).
     p("Leyendo archivos de salidas…", 5)
-    salidas, files_read, load_issues = _load_all_salidas(strict=True)
-    for iss in load_issues:
+    audit: list[dict] = []
+    salidas, files_read, load_issues = _load_all_salidas(strict=True, audit=audit)
+    for iss in load_issues + audit:
         emit(iss)
     rows_total = int(len(salidas))
 
@@ -335,6 +338,12 @@ def _run_salidas_pipeline(
                 "msg": "No hay filas en los archivos de salidas (los archivos están vacíos).",
             }
         )
+        return {}, diagnostics
+
+    # Si la auditoría de tipos detectó errores (fecha invertida / texto en cantidad),
+    # no fusionamos ni calculamos: run_all recopilará los de todas las fuentes y
+    # lanzará BlockingError al final.
+    if any(i.get("severity") == "error" for i in audit):
         return {}, diagnostics
 
     # Normalizar llaves y cantidad.
@@ -630,17 +639,21 @@ def _run_ingresos_pipeline(
         )
         return []
 
-    frames, ok_names = [], []
+    frames, ok_names, audit = [], [], []
     for path, area in files:
         try:
-            frames.append(io_utils.read_ingresos(path, area))
+            frames.append(io_utils.read_ingresos(path, area, audit=audit))
             ok_names.append(path.name)
         except Exception as exc:  # corrupto, sin columnas, hoja rara
             raise BlockingError(
                 f"{path.name}: no se pudo leer el archivo de ingresos ({exc})."
             ) from exc
+    for iss in audit:
+        emit(iss)
 
     ing = pd.concat(frames, ignore_index=True)
+    if any(i.get("severity") == "error" for i in audit):
+        return []  # run_all recopila todos los errores y lanza BlockingError al final.
     if ing.empty:
         emit(
             {
@@ -836,17 +849,21 @@ def _run_ocupacion_pipeline(
         )
         return []
 
-    frames, ok_names = [], []
+    frames, ok_names, audit = [], [], []
     for path, area in files:
         try:
-            frames.append(io_utils.read_ocupacion(path, area))
+            frames.append(io_utils.read_ocupacion(path, area, audit=audit))
             ok_names.append(path.name)
         except Exception as exc:  # corrupto, sin columnas, hoja rara
             raise BlockingError(
                 f"{path.name}: no se pudo leer el archivo de ocupación ({exc})."
             ) from exc
+    for iss in audit:
+        emit(iss)
 
     ocu = pd.concat(frames, ignore_index=True)
+    if any(i.get("severity") == "error" for i in audit):
+        return []  # run_all recopila todos los errores y lanza BlockingError al final.
     if ocu.empty:
         emit(
             {
@@ -1014,17 +1031,21 @@ def _run_traslados_pipeline(emit, progress=None) -> list[dict]:
         )
         return []
 
-    frames, ok_names = [], []
+    frames, ok_names, audit = [], [], []
     for path, area in files:
         try:
-            frames.append(io_utils.read_traslados(path, area))
+            frames.append(io_utils.read_traslados(path, area, audit=audit))
             ok_names.append(path.name)
         except Exception as exc:  # corrupto, sin columnas, hoja rara
             raise BlockingError(
                 f"{path.name}: no se pudo leer el archivo de traslados ({exc})."
             ) from exc
+    for iss in audit:
+        emit(iss)
 
     tras = pd.concat(frames, ignore_index=True)
+    if any(i.get("severity") == "error" for i in audit):
+        return []  # run_all recopila todos los errores y lanza BlockingError al final.
     if tras.empty:
         emit(
             {
@@ -1162,17 +1183,21 @@ def _run_maquila_pipeline(
         )
         return []
 
-    frames, ok_names = [], []
+    frames, ok_names, audit = [], [], []
     for path, area in files:
         try:
-            frames.append(io_utils.read_maquila(path, area))
+            frames.append(io_utils.read_maquila(path, area, audit=audit))
             ok_names.append(path.name)
         except Exception as exc:  # corrupto, sin columnas, hoja rara
             raise BlockingError(
                 f"{path.name}: no se pudo leer el archivo de maquila ({exc})."
             ) from exc
+    for iss in audit:
+        emit(iss)
 
     mq = pd.concat(frames, ignore_index=True)
+    if any(i.get("severity") == "error" for i in audit):
+        return []  # run_all recopila todos los errores y lanza BlockingError al final.
     if mq.empty:
         emit(
             {
@@ -1395,17 +1420,21 @@ def _run_exportacion_pipeline(
         )
         return []
 
-    frames, ok_names = [], []
+    frames, ok_names, audit = [], [], []
     for path, area in files:
         try:
-            frames.append(io_utils.read_exportacion(path, area))
+            frames.append(io_utils.read_exportacion(path, area, audit=audit))
             ok_names.append(path.name)
         except Exception as exc:  # corrupto, sin columnas, hoja rara
             raise BlockingError(
                 f"{path.name}: no se pudo leer el archivo de exportación ({exc})."
             ) from exc
+    for iss in audit:
+        emit(iss)
 
     expo = pd.concat(frames, ignore_index=True)
+    if any(i.get("severity") == "error" for i in audit):
+        return []  # run_all recopila todos los errores y lanza BlockingError al final.
     if expo.empty:
         emit(
             {
@@ -1562,17 +1591,21 @@ def _run_etiquetas_pipeline(emit, progress=None) -> list[dict]:
         )
         return []
 
-    frames, ok_names = [], []
+    frames, ok_names, audit = [], [], []
     for path in files:
         try:
-            frames.append(io_utils.read_etiquetas(path))
+            frames.append(io_utils.read_etiquetas(path, audit=audit))
             ok_names.append(path.name)
         except Exception as exc:  # corrupto, sin columnas, hoja rara
             raise BlockingError(
                 f"{path.name}: no se pudo leer el archivo de etiquetas ({exc})."
             ) from exc
+    for iss in audit:
+        emit(iss)
 
     etiq = pd.concat(frames, ignore_index=True)
+    if any(i.get("severity") == "error" for i in audit):
+        return []  # run_all recopila todos los errores y lanza BlockingError al final.
     if etiq.empty:
         emit(
             {
@@ -1672,17 +1705,21 @@ def _run_paletizado_pipeline(emit, progress=None) -> list[dict]:
         )
         return []
 
-    frames, ok_names = [], []
+    frames, ok_names, audit = [], [], []
     for path in files:
         try:
-            frames.append(io_utils.read_paletizado(path))
+            frames.append(io_utils.read_paletizado(path, audit=audit))
             ok_names.append(path.name)
         except Exception as exc:  # corrupto, sin columnas, hoja rara
             raise BlockingError(
                 f"{path.name}: no se pudo leer el archivo de paletizado ({exc})."
             ) from exc
+    for iss in audit:
+        emit(iss)
 
     pal = pd.concat(frames, ignore_index=True)
+    if any(i.get("severity") == "error" for i in audit):
+        return []  # run_all recopila todos los errores y lanza BlockingError al final.
     if pal.empty:
         emit(
             {
@@ -1882,16 +1919,20 @@ def _run_planta_pipeline(emit, progress=None) -> list[dict]:
         )
         return []
 
-    frames = []
+    frames, audit = [], []
     for path in files:
         try:
-            frames.append(io_utils.read_planta(path))
+            frames.append(io_utils.read_planta(path, audit=audit))
         except Exception as exc:  # corrupto, sin estibas_consumer/profesional, hoja rara
             raise BlockingError(
                 f"{path.name}: no se pudo leer el archivo de planta ({exc})."
             ) from exc
+    for iss in audit:
+        emit(iss)
 
     pla = pd.concat(frames, ignore_index=True)
+    if any(i.get("severity") == "error" for i in audit):
+        return []  # run_all recopila todos los errores y lanza BlockingError al final.
     if pla.empty:
         emit(
             {
@@ -1992,16 +2033,20 @@ def _run_material_pipeline(
         )
         return []
 
-    frames = []
+    frames, audit = [], []
     for path in files:
         try:
-            frames.append(io_utils.read_material(path))
+            frames.append(io_utils.read_material(path, audit=audit))
         except Exception as exc:  # corrupto, sin fecha/cant_bodega_8, hoja rara
             raise BlockingError(
                 f"{path.name}: no se pudo leer el archivo de material ({exc})."
             ) from exc
+    for iss in audit:
+        emit(iss)
 
     mat = pd.concat(frames, ignore_index=True)
+    if any(i.get("severity") == "error" for i in audit):
+        return []  # run_all recopila todos los errores y lanza BlockingError al final.
     if mat.empty:
         emit(
             {
@@ -2236,16 +2281,20 @@ def _run_otros_pipeline(periodo: str, emit, progress=None) -> list[dict]:
         )
         return []
 
-    frames = []
+    frames, audit = [], []
     for path in files:
         try:
-            frames.append(io_utils.read_otros(path))
+            frames.append(io_utils.read_otros(path, audit=audit))
         except Exception as exc:  # corrupto, sin columnas obligatorias, hoja rara
             raise BlockingError(
                 f"{path.name}: no se pudo leer el archivo de otros ({exc})."
             ) from exc
+    for iss in audit:
+        emit(iss)
 
     otros = pd.concat(frames, ignore_index=True)
+    if any(i.get("severity") == "error" for i in audit):
+        return []  # run_all recopila todos los errores y lanza BlockingError al final.
     if otros.empty:
         emit(
             {
@@ -2494,6 +2543,19 @@ def run_all(start: str, end: str, *, progress=None, on_issue=None) -> Step1Resul
     # no están en tarifas.xlsx (se eliminarían) y además `valor` puede ser decimal
     # (cánones prorrateados, que _aggregate_servicios truncaría a int).
     otros_services = _run_otros_pipeline(periodo, emit, p)
+
+    # Auditoría de tipos: si alguna fuente trajo fechas con formato raro (mes/día) o
+    # texto en columnas numéricas, se detiene SIN generar Excel. Los issues ya se
+    # emitieron en vivo durante la lectura; aquí lanzamos BlockingError para que la UI
+    # los liste todos (rojo) y el usuario corrija antes de volver a generar.
+    audit_errors = [i for i in issues if i.get("kind") == "audit" and i.get("severity") == "error"]
+    if audit_errors:
+        raise BlockingError(
+            f"Se encontraron {len(audit_errors)} problema(s) de datos inválidos "
+            "(fechas con formato raro o texto en columnas numéricas). Revísalos en "
+            "el panel de errores y corrige los archivos antes de volver a generar."
+        )
+
     servicios = servicios + otros_services
     combined = dict(totals)
     combined["servicios"] = servicios
@@ -2886,10 +2948,16 @@ if __name__ == "__main__":
     except (AttributeError, ValueError):
         pass
 
+    emitted: list[dict] = []
     try:
-        res = run_all("20/05/2026", "19/06/2026")
+        res = run_all("20/05/2026", "19/06/2026", on_issue=emitted.append)
     except BlockingError as exc:
         print("PROCESO DETENIDO (error grave de archivo):", exc)
+        audit = [i for i in emitted if i.get("kind") == "audit"]
+        if audit:
+            print("\nDetalles de auditoría de tipos (fechas/números inválidos):")
+            for i in audit:
+                print(f"  - {i.get('file', '?')}: {i.get('msg')}")
         raise SystemExit(1)
 
     print("Issues:")

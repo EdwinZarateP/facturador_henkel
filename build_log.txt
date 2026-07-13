@@ -1,0 +1,164 @@
+447 INFO: PyInstaller: 6.14.1, contrib hooks: 2025.5
+448 INFO: Python: 3.13.4
+489 INFO: Platform: Windows-11-10.0.26200-SP0
+489 INFO: Python environment: C:\Users\ASUS\AppData\Local\Programs\Python\Python313
+2132 INFO: Module search paths (PYTHONPATH):
+['C:\\Users\\ASUS\\Documents\\Blue\\FACTURADOR HENKEL',
+ 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip',
+ 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\DLLs',
+ 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib',
+ 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313',
+ 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages',
+ 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor',
+ 'C:\\Users\\ASUS\\Documents\\Blue\\FACTURADOR HENKEL']
+845 WARNING: discover_hook_directories: Failed to process hook entry point 'EntryPoint(name='hook-dirs', value='rapidfuzz.__pyinstaller:get_hook_dirs', group='pyinstaller40')': AttributeError: module 'rapidfuzz.__pyinstaller' has no attribute 'get_hook_dirs'
+3316 INFO: Appending 'datas' from .spec
+3317 INFO: checking Analysis
+3405 INFO: Building because excludes changed
+3405 INFO: Running Analysis Analysis-00.toc
+3405 INFO: Target bytecode optimization level: 0
+3405 INFO: Initializing module dependency graph...
+3407 INFO: Initializing module graph hook caches...
+3469 INFO: Analyzing modules for base_library.zip ...
+6389 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+10230 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+12052 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+12754 INFO: Caching module dependency graph...
+12802 INFO: Looking for Python shared library...
+12809 INFO: Using Python shared library: C:\Users\ASUS\AppData\Local\Programs\Python\Python313\python313.dll
+12809 INFO: Analyzing C:\Users\ASUS\Documents\Blue\FACTURADOR HENKEL\app.py
+12987 INFO: Processing standard module hook 'hook-uvicorn.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+14742 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+15163 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+17406 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+17410 INFO: SetuptoolsInfo: initializing cached setuptools info...
+23673 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+23780 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+23955 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+23960 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.importlib_metadata'!
+23983 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+24054 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+24198 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+24207 INFO: Processing pre-safe-import-module hook 'hook-jaraco.functools.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+24210 INFO: Setuptools: 'jaraco.functools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco.functools'!
+24238 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+24240 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+24737 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+25123 INFO: Processing pre-safe-import-module hook 'hook-jaraco.text.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+25125 INFO: Setuptools: 'jaraco.text' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco.text'!
+25157 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+25160 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+25162 INFO: Processing pre-safe-import-module hook 'hook-jaraco.context.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+25163 INFO: Setuptools: 'jaraco.context' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco.context'!
+25585 INFO: Processing pre-safe-import-module hook 'hook-backports.tarfile.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+25586 INFO: Setuptools: 'backports.tarfile' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.backports.tarfile'!
+25754 INFO: Processing standard module hook 'hook-backports.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+26499 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+26500 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+27356 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+27357 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+27698 INFO: Processing standard module hook 'hook-setuptools._vendor.importlib_metadata.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+27702 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+27705 INFO: Setuptools: 'zipp' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.zipp'!
+29157 INFO: Processing standard module hook 'hook-websockets.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+30874 INFO: Processing standard module hook 'hook-anyio.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+34143 INFO: Processing standard module hook 'hook-pycparser.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+38285 INFO: Processing standard module hook 'hook-pydantic.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+C:\Users\ASUS\AppData\Local\Programs\Python\Python313\Lib\site-packages\pydantic\experimental\__init__.py:7: PydanticExperimentalWarning: This module is experimental, its contents are subject to change and deprecation.
+  warnings.warn(
+40949 INFO: Processing standard module hook 'hook-pygments.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+47364 INFO: Processing standard module hook 'hook-zoneinfo.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+49320 INFO: Processing standard module hook 'hook-certifi.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+51745 INFO: Processing standard module hook 'hook-dns.rdata.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+56432 INFO: Processing standard module hook 'hook-orjson.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+56608 INFO: Processing standard module hook 'hook-pandas.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+58881 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+64388 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+65562 INFO: Processing standard module hook 'hook-pytz.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+70194 INFO: Processing standard module hook 'hook-pandas.io.formats.style.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+74108 INFO: Processing standard module hook 'hook-pandas.plotting.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+75210 INFO: Processing standard module hook 'hook-openpyxl.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+75350 INFO: Processing standard module hook 'hook-lxml.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+76090 INFO: Processing standard module hook 'hook-lxml.etree.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+76562 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+77995 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+78164 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+79319 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+83616 INFO: Processing standard module hook 'hook-sqlite3.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+84505 INFO: Processing standard module hook 'hook-pandas.io.clipboard.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+85073 INFO: Processing standard module hook 'hook-dateutil.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+85487 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+86180 INFO: Processing standard module hook 'hook-cryptography.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+88085 INFO: hook-cryptography: cryptography does not seem to be using dynamically linked OpenSSL.
+88605 INFO: Processing standard module hook 'hook-bcrypt.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+90073 INFO: Processing standard module hook 'hook-urllib3.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+91787 INFO: Processing standard module hook 'hook-xml.dom.domreg.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+93104 INFO: Analyzing hidden import 'uvicorn.__main__'
+93106 INFO: Analyzing hidden import 'uvicorn.lifespan'
+93107 INFO: Analyzing hidden import 'uvicorn.lifespan.off'
+93109 INFO: Analyzing hidden import 'uvicorn.lifespan.on'
+93118 INFO: Analyzing hidden import 'uvicorn.loops'
+93119 INFO: Analyzing hidden import 'uvicorn.loops.asyncio'
+93120 INFO: Analyzing hidden import 'uvicorn.loops.auto'
+93125 INFO: Analyzing hidden import 'uvicorn.protocols.http.auto'
+93127 INFO: Analyzing hidden import 'uvicorn.protocols.websockets.auto'
+93129 INFO: Analyzing hidden import 'uvicorn.workers'
+93136 INFO: Analyzing hidden import 'starlette.authentication'
+93145 INFO: Analyzing hidden import 'starlette.config'
+93153 INFO: Analyzing hidden import 'starlette.endpoints'
+93161 INFO: Analyzing hidden import 'starlette.middleware.authentication'
+93166 INFO: Analyzing hidden import 'starlette.middleware.cors'
+93175 INFO: Analyzing hidden import 'starlette.middleware.gzip'
+93184 INFO: Analyzing hidden import 'starlette.middleware.httpsredirect'
+93187 INFO: Analyzing hidden import 'starlette.middleware.sessions'
+93334 INFO: Analyzing hidden import 'starlette.middleware.trustedhost'
+93339 INFO: Analyzing hidden import 'starlette.middleware.wsgi'
+93348 INFO: Analyzing hidden import 'starlette.schemas'
+93356 INFO: Analyzing hidden import 'starlette.templating'
+93370 INFO: Processing standard module hook 'hook-jinja2.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+94234 INFO: Analyzing hidden import 'starlette.testclient'
+94271 INFO: Processing module hooks (post-graph stage)...
+95060 INFO: Processing standard module hook 'hook-lxml.isoschematron.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+96261 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks'
+99641 INFO: Processing standard module hook 'hook-lxml.objectify.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+99643 INFO: Processing standard module hook 'hook-tzdata.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+100492 INFO: Performing binary vs. data reclassification (1250 entries)
+106033 INFO: Looking for ctypes DLLs
+106136 INFO: Analyzing run-time hooks ...
+106152 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+106255 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+106317 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+106325 INFO: Including run-time hook 'pyi_rth_cryptography_openssl.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+106338 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+106477 INFO: Creating base_library.zip...
+106534 INFO: Looking for dynamic libraries
+C:\Users\ASUS\AppData\Local\Programs\Python\Python313\Lib\site-packages\pydantic\experimental\__init__.py:7: PydanticExperimentalWarning: This module is experimental, its contents are subject to change and deprecation.
+  warnings.warn(
+111833 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\pandas.libs', 'C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\numpy.libs']
+111833 INFO: Extra DLL search directories (PATH): []
+113223 INFO: Warnings written to C:\Users\ASUS\Documents\Blue\FACTURADOR HENKEL\build\FacturadorHenkel\warn-FacturadorHenkel.txt
+113496 INFO: Graph cross-reference written to C:\Users\ASUS\Documents\Blue\FACTURADOR HENKEL\build\FacturadorHenkel\xref-FacturadorHenkel.html
+113631 INFO: checking PYZ
+113715 INFO: Building because C:\Users\ASUS\Documents\Blue\FACTURADOR HENKEL\processing\io_utils.py changed
+113715 INFO: Building PYZ (ZlibArchive) C:\Users\ASUS\Documents\Blue\FACTURADOR HENKEL\build\FacturadorHenkel\PYZ-00.pyz
+116440 INFO: Building PYZ (ZlibArchive) C:\Users\ASUS\Documents\Blue\FACTURADOR HENKEL\build\FacturadorHenkel\PYZ-00.pyz completed successfully.
+116533 INFO: checking PKG
+116536 INFO: Building because C:\Users\ASUS\Documents\Blue\FACTURADOR HENKEL\build\FacturadorHenkel\PYZ-00.pyz changed
+116536 INFO: Building PKG (CArchive) FacturadorHenkel.pkg
+116589 INFO: Building PKG (CArchive) FacturadorHenkel.pkg completed successfully.
+116591 INFO: Bootloader C:\Users\ASUS\AppData\Local\Programs\Python\Python313\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe
+116592 INFO: checking EXE
+116612 INFO: Rebuilding EXE-00.toc because pkg is more recent
+116612 INFO: Building EXE from EXE-00.toc
+116613 INFO: Copying bootloader EXE to C:\Users\ASUS\Documents\Blue\FACTURADOR HENKEL\build\FacturadorHenkel\FacturadorHenkel.exe
+116691 INFO: Copying icon to EXE
+116774 INFO: Copying 0 resources to EXE
+116774 INFO: Embedding manifest in EXE
+116837 INFO: Appending PKG archive to EXE
+116953 INFO: Fixing EXE headers
+117379 INFO: Building EXE from EXE-00.toc completed successfully.
+117395 INFO: checking COLLECT
+117430 INFO: Removing dir C:\Users\ASUS\Documents\Blue\FACTURADOR HENKEL\dist\FacturadorHenkel
+118075 INFO: Building COLLECT COLLECT-00.toc
+121287 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+121324 INFO: Build complete! The results are available in: C:\Users\ASUS\Documents\Blue\FACTURADOR HENKEL\dist

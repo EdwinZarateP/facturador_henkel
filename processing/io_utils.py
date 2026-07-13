@@ -9,8 +9,10 @@ Principios:
 """
 from __future__ import annotations
 
+import calendar
 import re
 import unicodedata
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -94,6 +96,130 @@ def find_column_index(columns, wanted: str, occurrence: int = 0) -> int:
     return positions[idx]
 
 
+# ---------------------------------------------------------------------------
+# Auditoría de tipos de datos (fechas/números) sobre la columna CRUDA
+# ---------------------------------------------------------------------------
+
+# Patrón "d/m/a..." para clasificar fechas en texto (p. ej. "02/21/2026").
+_DATE_DMY_RE = re.compile(r"^\s*(\d{1,2})/(\d{1,2})/(\d{2,4})")
+
+
+def _classify_date_str(value) -> str | None:
+    """Clasifica un string de fecha como 'invertida' (mm/dd), 'invalida' o None (OK).
+
+    Determinista (sin depender de la heurística de dayfirst de pandas, que es
+    inestable en arreglos mixtos):
+    - Si calza d/m/a: válida si día=a y mes=b son una fecha real (calendar.monthrange);
+      si no, es 'invertida' cuando mes=a/día=b sí calza (a<=12, b>12); y 'invalida' si no.
+    - Si no calza d/m/a (ISO "2026-06-05", texto...): válida si pandas la parsea.
+    """
+    s = str(value).strip()
+    m = _DATE_DMY_RE.match(s)
+    if m:
+        a, b, yr = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if yr < 100:  # año de 2 dígitos -> normalizar.
+            yr += 2000 if yr < 70 else 1900
+        if 1 <= b <= 12 and 1 <= a <= calendar.monthrange(yr, b)[1]:
+            return None  # fecha dd/mm/aaaa válida
+        if a <= 12 and 1 <= b <= calendar.monthrange(yr, a)[1]:
+            return "invertida"  # no es dd/mm, pero calza como mm/dd (mes/día)
+        return "invalida"
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            pd.to_datetime(s)
+        return None
+    except (ValueError, TypeError):
+        return "invalida"
+
+
+def audit_value_column(raw, col_label: str, kind: str, file: str, extra_valid=()) -> list[dict]:
+    """Audita una columna CRUDA (antes del `errors="coerce"`) y devuelve issues de
+    error (`{severity:"error", kind:"audit", file, msg}`) para celdas no-vacías con
+    datos inválidos. Los vacíos legítimos (NaN/None/""/"nan") NUNCA se flaggean.
+
+    - kind="number": celdas no-vacías que no son número (texto basura como "s").
+      `extra_valid` admite literales extra válidos (p. ej. "-" en Ocupación = 0).
+    - kind="date": sobre valores str no-vacíos detecta (a) inválidas (NaT al
+      parsear) y (b) formato invertido mm/dd (string "d/m/..." con mes≤12 y día>12,
+      p. ej. "02/21/2026"). Los datetime nativos de Excel (dtype datetime64) se
+      aceptan sin auditar (Excel ya los validó como fecha real).
+      Limitación: si Excel convirtió el valor a fecha real (locale en-US), el
+      invertido ya no es detectable a posteriori.
+    - kind="money": celdas no-vacías que `_parse_dinero` no convierte (para
+      tarifa/costo de Otros, que admiten texto moneda "$ 13.933.333").
+
+    Devuelve [] si todo está OK. Vectorizado; si la columna fecha es datetime64 no
+    audita nada (rápido, caso normal en línea base).
+    """
+    if raw is None or len(raw) == 0:
+        return []
+
+    # Máscara de vacíos legítimos: NaN/None o strings en blanco ("", "nan", "NaT"…).
+    stripped = raw.astype(str).str.strip()
+    blank = raw.isna() | stripped.isin(["", "nan", "none", "<na>", "None", "NaT"])
+    nonblank = ~blank
+
+    def _issue(n: int, what: str, examples: list[str]) -> dict:
+        ex = ", ".join(f"'{e}'" for e in examples[:2])
+        return {
+            "severity": "error",
+            "kind": "audit",
+            "file": file,
+            "msg": f"{n} celda(s) {what} en '{col_label}'. Ej: {ex}",
+        }
+
+    if kind == "number":
+        parsed = pd.to_numeric(raw, errors="coerce")
+        bad = nonblank & parsed.isna()
+        if extra_valid:
+            ev = {str(x).strip() for x in extra_valid}
+            bad = bad & ~stripped.isin(ev)
+        n = int(bad.sum())
+        if n:
+            return [_issue(n, "con texto en columna numérica", stripped[bad].tolist())]
+
+    elif kind == "money":
+        bad = nonblank & raw.map(lambda v: _parse_dinero(v) is None)
+        n = int(bad.sum())
+        if n:
+            return [_issue(n, "con valor no numérico/moneda inválido", stripped[bad].tolist())]
+
+    elif kind == "date":
+        # datetime64 puro -> Excel ya validó las fechas; nada que auditar.
+        if pd.api.types.is_datetime64_any_dtype(raw):
+            return []
+        # Solo auditan los strings (fechas que Excel dejó como texto, p. ej.
+        # "02/21/2026" que un locale dd/mm no reconoce y por tanto no convirtió).
+        str_mask = nonblank & raw.map(lambda v: isinstance(v, str))
+        if not str_mask.any():
+            return []
+        vals = raw[str_mask]
+        classes = vals.map(_classify_date_str)
+        inv_mask = classes == "invertida"
+        bad_mask = classes == "invalida"
+        n_inv = int(inv_mask.sum())
+        n_bad = int(bad_mask.sum())
+        if n_inv or n_bad:
+            parts: list[str] = []
+            examples: list[str] = []
+            if n_inv:
+                parts.append(f"{n_inv} con formato invertido sospechoso (mes/día)")
+                examples += [str(v) for v in vals[inv_mask].head(2).tolist()]
+            if n_bad:
+                parts.append(f"{n_bad} inválida(s)/no parseable(s)")
+                examples += [str(v) for v in vals[bad_mask].head(2).tolist()]
+            ex = ", ".join(f"'{e}'" for e in examples[:2])
+            return [{
+                "severity": "error",
+                "kind": "audit",
+                "file": file,
+                "msg": f"Columna de fecha '{col_label}': {' y '.join(parts)}. Ej: {ex}",
+            }]
+
+    return []
+
+
 def excel_engine() -> str:
     """Motor de lectura preferido: 'calamine' (rápido, ~6x) si está disponible,
     si no 'openpyxl'. calamine reduce la lectura de los salidas grandes de ~95s a ~15s."""
@@ -133,7 +259,7 @@ def pick_salidas_sheet(path: Path) -> str:
 _FAST_NORMALIZED = [normalize(config.SALIDAS_COLS[k]) for k in ("delivery", "cliente", "material", "cantidad", "fecha")]
 
 
-def read_salidas(path: Path, area: str) -> pd.DataFrame:
+def read_salidas(path: Path, area: str, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de salidas y devuelve [delivery, cliente, material, cantidad, fecha, area].
 
     Estrategia de rendimiento:
@@ -158,16 +284,21 @@ def read_salidas(path: Path, area: str) -> pd.DataFrame:
             continue
         norm_cols = [normalize(c) for c in df.columns]
         if norm_cols == _FAST_NORMALIZED:
-            return _select_salidas(df, area)
+            return _select_salidas(df, area, audit, path.name)
         # El layout cambió: fallback robusto con lectura completa de esta hoja.
         full = xls.parse(sheet_name=sheet)
         fcols = list(full.columns)
+        raw_cantidad = full[find_column(fcols, config.SALIDAS_COLS["cantidad"])]
+        raw_fecha = full[find_column(fcols, config.SALIDAS_COLS["fecha"])]
+        if audit is not None:
+            audit.extend(audit_value_column(raw_cantidad, config.SALIDAS_COLS["cantidad"], "number", path.name))
+            audit.extend(audit_value_column(raw_fecha, config.SALIDAS_COLS["fecha"], "date", path.name))
         out = pd.DataFrame()
         out["delivery"] = full[find_column(fcols, config.SALIDAS_COLS["delivery"])]
         out["cliente"] = full[find_column(fcols, config.SALIDAS_COLS["cliente"], occurrence=0)]
         out["material"] = full[find_column(fcols, config.SALIDAS_COLS["material"], occurrence=0)]
-        out["cantidad"] = pd.to_numeric(full[find_column(fcols, config.SALIDAS_COLS["cantidad"])], errors="coerce")
-        out["fecha"] = pd.to_datetime(full[find_column(fcols, config.SALIDAS_COLS["fecha"])], errors="coerce")
+        out["cantidad"] = pd.to_numeric(raw_cantidad, errors="coerce")
+        out["fecha"] = pd.to_datetime(raw_fecha, errors="coerce")
         out["area"] = area
         return out
     raise KeyError(
@@ -175,7 +306,7 @@ def read_salidas(path: Path, area: str) -> pd.DataFrame:
     )
 
 
-def _select_salidas(df: pd.DataFrame, area: str) -> pd.DataFrame:
+def _select_salidas(df: pd.DataFrame, area: str, audit: list | None = None, file: str | None = None) -> pd.DataFrame:
     """Selecciona/limpia las columnas ya leídas por posición (camino rápido)."""
     out = pd.DataFrame()
     out["delivery"] = df.iloc[:, 0]
@@ -184,6 +315,10 @@ def _select_salidas(df: pd.DataFrame, area: str) -> pd.DataFrame:
     out["cantidad"] = pd.to_numeric(df.iloc[:, 3], errors="coerce")
     out["fecha"] = pd.to_datetime(df.iloc[:, 4], errors="coerce")
     out["area"] = area
+    if audit is not None and file is not None:
+        # Auditar las columnas crudas (posición 3=cantidad, 4=fecha) antes del coerce.
+        audit.extend(audit_value_column(df.iloc[:, 3], config.SALIDAS_COLS["cantidad"], "number", file))
+        audit.extend(audit_value_column(df.iloc[:, 4], config.SALIDAS_COLS["fecha"], "date", file))
     return out
 
 
@@ -208,7 +343,7 @@ def find_salidas_files(base_dir: Optional[Path] = None):
 # Lectura de ingresos (ingresos_cons / ingresos_prof): Paso 3
 # ---------------------------------------------------------------------------
 
-def read_ingresos(path: Path, area: str) -> pd.DataFrame:
+def read_ingresos(path: Path, area: str, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de ingresos y devuelve
     [posting_date, cantidad, material, documento, referencia, area].
 
@@ -231,12 +366,13 @@ def read_ingresos(path: Path, area: str) -> pd.DataFrame:
         cols = list(df.columns)
         try:
             out = pd.DataFrame()
-            out["posting_date"] = pd.to_datetime(
-                df[find_column(cols, config.INGRESOS_COLS["posting_date"])], errors="coerce"
-            )
-            out["cantidad"] = pd.to_numeric(
-                df[find_column(cols, config.INGRESOS_COLS["cantidad"])], errors="coerce"
-            )
+            raw_posting = df[find_column(cols, config.INGRESOS_COLS["posting_date"])]
+            raw_cantidad = df[find_column(cols, config.INGRESOS_COLS["cantidad"])]
+            if audit is not None:
+                audit.extend(audit_value_column(raw_posting, config.INGRESOS_COLS["posting_date"], "date", path.name))
+                audit.extend(audit_value_column(raw_cantidad, config.INGRESOS_COLS["cantidad"], "number", path.name))
+            out["posting_date"] = pd.to_datetime(raw_posting, errors="coerce")
+            out["cantidad"] = pd.to_numeric(raw_cantidad, errors="coerce")
             out["material"] = df[find_column(cols, config.INGRESOS_COLS["material"])]
             out["documento"] = df[find_column(cols, config.INGRESOS_COLS["documento"])]
             out["referencia"] = df[find_column(cols, config.INGRESOS_COLS["referencia"])]
@@ -274,7 +410,7 @@ def find_ingresos_files(base_dir: Optional[Path] = None):
 # Lectura de ocupación (ocupacion_cons / ocupacion_prof): Paso 4
 # ---------------------------------------------------------------------------
 
-def read_ocupacion(path: Path, area: str) -> pd.DataFrame:
+def read_ocupacion(path: Path, area: str, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de ocupación y devuelve [fecha, almacen, tipo, ocupacion, area].
 
     Lee por nombre (find_column): los archivos son pequeños (~256-384 filas), así que no
@@ -298,10 +434,16 @@ def read_ocupacion(path: Path, area: str) -> pd.DataFrame:
         cols = list(df.columns)
         try:
             out = pd.DataFrame()
-            out["fecha"] = df[find_column(cols, config.OCUPACION_COLS["fecha"])]
+            raw_fecha = df[find_column(cols, config.OCUPACION_COLS["fecha"])]
+            raw_ocup = df[find_column(cols, config.OCUPACION_COLS["ocupacion"], occurrence=0)]
+            if audit is not None:
+                audit.extend(audit_value_column(raw_fecha, config.OCUPACION_COLS["fecha"], "date", path.name))
+                # Ocupación admite "-" (= 0 en fnNumero): se trata como válido.
+                audit.extend(audit_value_column(raw_ocup, config.OCUPACION_COLS["ocupacion"], "number", path.name, extra_valid=("-",)))
+            out["fecha"] = raw_fecha
             out["almacen"] = df[find_column(cols, config.OCUPACION_COLS["almacen"])]
             out["tipo"] = df[find_column(cols, config.OCUPACION_COLS["tipo"])]
-            out["ocupacion"] = df[find_column(cols, config.OCUPACION_COLS["ocupacion"], occurrence=0)]
+            out["ocupacion"] = raw_ocup
         except KeyError:
             # Esta hoja no tiene las columnas de ocupación; probar la siguiente.
             continue
@@ -337,7 +479,7 @@ def find_ocupacion_files(base_dir: Optional[Path] = None):
 # Lectura de traslados (traslados_cons / traslados_prof): Paso 5
 # ---------------------------------------------------------------------------
 
-def read_traslados(path: Path, area: str) -> pd.DataFrame:
+def read_traslados(path: Path, area: str, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de traslados y devuelve [delivery, shu, con, area].
 
     Lee por nombre (find_column): los archivos son pequeños (~5-12 filas), así que no hace
@@ -360,9 +502,14 @@ def read_traslados(path: Path, area: str) -> pd.DataFrame:
         cols = list(df.columns)
         try:
             out = pd.DataFrame()
+            raw_shu = df[find_column(cols, config.TRASLADOS_COLS["shu"])]
+            raw_con = df[find_column(cols, config.TRASLADOS_COLS["con"])]
+            if audit is not None:
+                audit.extend(audit_value_column(raw_shu, config.TRASLADOS_COLS["shu"], "number", path.name))
+                audit.extend(audit_value_column(raw_con, config.TRASLADOS_COLS["con"], "number", path.name))
             out["delivery"] = df[find_column(cols, config.TRASLADOS_COLS["delivery"])]
-            out["shu"] = df[find_column(cols, config.TRASLADOS_COLS["shu"])]
-            out["con"] = df[find_column(cols, config.TRASLADOS_COLS["con"])]
+            out["shu"] = raw_shu
+            out["con"] = raw_con
         except KeyError:
             # Esta hoja no tiene las columnas de traslados; probar la siguiente.
             continue
@@ -396,7 +543,7 @@ def find_traslados_files(base_dir: Optional[Path] = None):
 # Lectura de maquila (maquila_cons / maquila_prof): Paso 6
 # ---------------------------------------------------------------------------
 
-def read_maquila(path: Path, area: str) -> pd.DataFrame:
+def read_maquila(path: Path, area: str, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de maquila y devuelve [posting_date, cantidad, material, area].
 
     Molde `read_ingresos` pero con solo 3 columnas (los maquila no usan documento ni
@@ -419,12 +566,13 @@ def read_maquila(path: Path, area: str) -> pd.DataFrame:
         cols = list(df.columns)
         try:
             out = pd.DataFrame()
-            out["posting_date"] = pd.to_datetime(
-                df[find_column(cols, config.MAQUILA_COLS["posting_date"])], errors="coerce"
-            )
-            out["cantidad"] = pd.to_numeric(
-                df[find_column(cols, config.MAQUILA_COLS["cantidad"])], errors="coerce"
-            )
+            raw_posting = df[find_column(cols, config.MAQUILA_COLS["posting_date"])]
+            raw_cantidad = df[find_column(cols, config.MAQUILA_COLS["cantidad"])]
+            if audit is not None:
+                audit.extend(audit_value_column(raw_posting, config.MAQUILA_COLS["posting_date"], "date", path.name))
+                audit.extend(audit_value_column(raw_cantidad, config.MAQUILA_COLS["cantidad"], "number", path.name))
+            out["posting_date"] = pd.to_datetime(raw_posting, errors="coerce")
+            out["cantidad"] = pd.to_numeric(raw_cantidad, errors="coerce")
             out["material"] = df[find_column(cols, config.MAQUILA_COLS["material"])]
         except KeyError:
             # Esta hoja no tiene las columnas de maquila; probar la siguiente.
@@ -462,7 +610,7 @@ def find_maquila_files(base_dir: Optional[Path] = None):
 # Lectura de exportaciones (exportacion_cons / exportacion_prof): Paso 7
 # ---------------------------------------------------------------------------
 
-def read_exportacion(path: Path, area: str) -> pd.DataFrame:
+def read_exportacion(path: Path, area: str, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de exportación y devuelve
     [delivery, fecha, material, cantidad, canal, area].
 
@@ -487,14 +635,15 @@ def read_exportacion(path: Path, area: str) -> pd.DataFrame:
         cols = list(df.columns)
         try:
             out = pd.DataFrame()
+            raw_fecha = df[find_column(cols, config.EXPORTACION_COLS["fecha"])]
+            raw_cantidad = df[find_column(cols, config.EXPORTACION_COLS["cantidad"])]
+            if audit is not None:
+                audit.extend(audit_value_column(raw_fecha, config.EXPORTACION_COLS["fecha"], "date", path.name))
+                audit.extend(audit_value_column(raw_cantidad, config.EXPORTACION_COLS["cantidad"], "number", path.name))
             out["delivery"] = df[find_column(cols, config.EXPORTACION_COLS["delivery"])]
-            out["fecha"] = pd.to_datetime(
-                df[find_column(cols, config.EXPORTACION_COLS["fecha"])], errors="coerce"
-            )
+            out["fecha"] = pd.to_datetime(raw_fecha, errors="coerce")
             out["material"] = df[find_column(cols, config.EXPORTACION_COLS["material"])]
-            out["cantidad"] = pd.to_numeric(
-                df[find_column(cols, config.EXPORTACION_COLS["cantidad"])], errors="coerce"
-            )
+            out["cantidad"] = pd.to_numeric(raw_cantidad, errors="coerce")
             out["canal"] = df[find_column(cols, config.EXPORTACION_COLS["canal"])]
         except KeyError:
             # Esta hoja no tiene las columnas de exportación; probar la siguiente.
@@ -535,7 +684,7 @@ def find_exportacion_files(base_dir: Optional[Path] = None):
 # Lectura de etiquetas (etiquetas_*): Paso 8
 # ---------------------------------------------------------------------------
 
-def read_etiquetas(path: Path) -> pd.DataFrame:
+def read_etiquetas(path: Path, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de etiquetas y devuelve [cajas, tipo].
 
     Molde `read_traslados`: archivo pequeño (~50 filas), lectura por nombre
@@ -558,7 +707,10 @@ def read_etiquetas(path: Path) -> pd.DataFrame:
         cols = list(df.columns)
         try:
             out = pd.DataFrame()
-            out["cajas"] = df[find_column(cols, config.ETIQUETAS_COLS["cajas"])]
+            raw_cajas = df[find_column(cols, config.ETIQUETAS_COLS["cajas"])]
+            if audit is not None:
+                audit.extend(audit_value_column(raw_cajas, config.ETIQUETAS_COLS["cajas"], "number", path.name))
+            out["cajas"] = raw_cajas
             out["tipo"] = df[find_column(cols, config.ETIQUETAS_COLS["tipo"])]
         except KeyError:
             # Esta hoja no tiene las columnas de etiquetas; probar la siguiente.
@@ -589,7 +741,7 @@ def find_etiquetas_files(base_dir: Optional[Path] = None) -> list[Path]:
 # Lectura de paletizado (paletizado_*): Paso 9
 # ---------------------------------------------------------------------------
 
-def read_paletizado(path: Path) -> pd.DataFrame:
+def read_paletizado(path: Path, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de paletizado y devuelve [area, despacho, total, canal].
 
     Molde `read_traslados`: archivo pequeño (~90 filas), lectura por nombre
@@ -613,11 +765,12 @@ def read_paletizado(path: Path) -> pd.DataFrame:
         cols = list(df.columns)
         try:
             out = pd.DataFrame()
+            raw_total = df[find_column(cols, config.PALETIZADO_COLS["total"])]
+            if audit is not None:
+                audit.extend(audit_value_column(raw_total, config.PALETIZADO_COLS["total"], "number", path.name))
             out["area"] = df[find_column(cols, config.PALETIZADO_COLS["area"])]
             out["despacho"] = df[find_column(cols, config.PALETIZADO_COLS["despacho"])]
-            out["total"] = pd.to_numeric(
-                df[find_column(cols, config.PALETIZADO_COLS["total"])], errors="coerce"
-            )
+            out["total"] = pd.to_numeric(raw_total, errors="coerce")
             out["canal"] = df[find_column(cols, config.PALETIZADO_COLS["canal"])]
         except KeyError:
             # Esta hoja no tiene las columnas de paletizado; probar la siguiente.
@@ -702,7 +855,7 @@ def find_trincaje_files(base_dir: Optional[Path] = None) -> list[Path]:
 # Lectura de planta (planta_*): Paso 11
 # ---------------------------------------------------------------------------
 
-def read_planta(path: Path) -> pd.DataFrame:
+def read_planta(path: Path, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de planta y devuelve [consumer, profesional].
 
     Molde `read_etiquetas`: archivo pequeño (~30 filas), lectura por nombre
@@ -726,12 +879,13 @@ def read_planta(path: Path) -> pd.DataFrame:
         cols = list(df.columns)
         try:
             out = pd.DataFrame()
-            out["consumer"] = pd.to_numeric(
-                df[find_column(cols, config.PLANTA_COLS["consumer"])], errors="coerce"
-            )
-            out["profesional"] = pd.to_numeric(
-                df[find_column(cols, config.PLANTA_COLS["profesional"])], errors="coerce"
-            )
+            raw_consumer = df[find_column(cols, config.PLANTA_COLS["consumer"])]
+            raw_profesional = df[find_column(cols, config.PLANTA_COLS["profesional"])]
+            if audit is not None:
+                audit.extend(audit_value_column(raw_consumer, config.PLANTA_COLS["consumer"], "number", path.name))
+                audit.extend(audit_value_column(raw_profesional, config.PLANTA_COLS["profesional"], "number", path.name))
+            out["consumer"] = pd.to_numeric(raw_consumer, errors="coerce")
+            out["profesional"] = pd.to_numeric(raw_profesional, errors="coerce")
         except KeyError:
             # Esta hoja no tiene las columnas de planta; probar la siguiente.
             continue
@@ -772,7 +926,7 @@ def find_planta_files(base_dir: Optional[Path] = None) -> list[Path]:
 # Lectura de material (ocupacionMaterial_*): Paso 12
 # ---------------------------------------------------------------------------
 
-def read_material(path: Path) -> pd.DataFrame:
+def read_material(path: Path, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de ocupacionMaterial y devuelve [fecha, valor].
 
     Molde `read_ocupacion` (simplificado): archivo pequeño (~32 filas), lectura por nombre
@@ -795,12 +949,13 @@ def read_material(path: Path) -> pd.DataFrame:
         cols = list(df.columns)
         try:
             out = pd.DataFrame()
-            out["fecha"] = pd.to_datetime(
-                df[find_column(cols, config.MATERIAL_COLS["fecha"])], errors="coerce"
-            )
-            out["valor"] = pd.to_numeric(
-                df[find_column(cols, config.MATERIAL_COLS["valor"])], errors="coerce"
-            )
+            raw_fecha = df[find_column(cols, config.MATERIAL_COLS["fecha"])]
+            raw_valor = df[find_column(cols, config.MATERIAL_COLS["valor"])]
+            if audit is not None:
+                audit.extend(audit_value_column(raw_fecha, config.MATERIAL_COLS["fecha"], "date", path.name))
+                audit.extend(audit_value_column(raw_valor, config.MATERIAL_COLS["valor"], "number", path.name))
+            out["fecha"] = pd.to_datetime(raw_fecha, errors="coerce")
+            out["valor"] = pd.to_numeric(raw_valor, errors="coerce")
         except KeyError:
             # Esta hoja no tiene las columnas de material; probar la siguiente.
             continue
@@ -924,7 +1079,7 @@ def _parse_dinero(value):
         return None
 
 
-def read_otros(path: Path) -> pd.DataFrame:
+def read_otros(path: Path, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo `otros_*` y devuelve las 9 columnas que el bot anexa al Excel.
 
     A diferencia del resto de pasos, este archivo es una tabla de servicios **pre-armados**
@@ -952,17 +1107,23 @@ def read_otros(path: Path) -> pd.DataFrame:
         cols = list(df.columns)
         try:
             out = pd.DataFrame()
+            raw_valor = df[find_column(cols, config.OTROS_COLS["valor"])]
+            raw_tarifa = df[find_column(cols, config.OTROS_COLS["tarifa"])]
+            raw_costo = df[find_column(cols, config.OTROS_COLS["costo"])]
+            if audit is not None:
+                audit.extend(audit_value_column(raw_valor, config.OTROS_COLS["valor"], "number", path.name))
+                # tarifa/costo admiten texto moneda ("$ 13.933.333"): money = no parseable por _parse_dinero.
+                audit.extend(audit_value_column(raw_tarifa, config.OTROS_COLS["tarifa"], "money", path.name))
+                audit.extend(audit_value_column(raw_costo, config.OTROS_COLS["costo"], "money", path.name))
             out["negocio"] = df[find_column(cols, config.OTROS_COLS["negocio"])]
             out["negocio_facturador"] = df[find_column(cols, config.OTROS_COLS["negocio_facturador"])]
             out["servicio"] = df[find_column(cols, config.OTROS_COLS["servicio"])]
-            out["valor"] = pd.to_numeric(
-                df[find_column(cols, config.OTROS_COLS["valor"])], errors="coerce"
-            )
+            out["valor"] = pd.to_numeric(raw_valor, errors="coerce")
             out["proceso_extendido"] = df[find_column(cols, config.OTROS_COLS["proceso_extendido"])]
             out["macro_proceso"] = df[find_column(cols, config.OTROS_COLS["macro_proceso"])]
             out["proceso_abreviado"] = df[find_column(cols, config.OTROS_COLS["proceso_abreviado"])]
-            out["tarifa"] = df[find_column(cols, config.OTROS_COLS["tarifa"])].map(_parse_dinero)
-            out["costo"] = df[find_column(cols, config.OTROS_COLS["costo"])].map(_parse_dinero)
+            out["tarifa"] = raw_tarifa.map(_parse_dinero)
+            out["costo"] = raw_costo.map(_parse_dinero)
         except KeyError:
             # Esta hoja no tiene las columnas esperadas; probar la siguiente.
             continue
