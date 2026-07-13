@@ -1096,9 +1096,11 @@ no depende de la heurística inestable de `dayfirst` de pandas):
 
 - **Fechas** (`Fecha factura`, `Posting Date`, `Fecha`, `fecha` de Material):
   **formato invertido mes/día** (`02/21/2026` → avisa; `13/02/2026` dd/mm válido **no**
-  avisa), **inválidas/no parseables** (`31/02/2026`, `abc`) y basura. Los `datetime`
-  nativos de Excel (celda fecha real) se aceptan sin auditar. `"05/06/2026"` (ambiguo)
-  **no** se flaggea.
+  avisa), **inválidas/no parseables** (`31/02/2026`, `abc`) y basura, y **números sueltos**
+  (p. ej. `45951` = número de serie de Excel sin formato de fecha → avisa: sin formato,
+  `pd.to_datetime` lo leería como nanosegundos desde 1970 y el paso se omitiría
+  silenciosamente como "0 filas en el rango"). Los `datetime` nativos de Excel
+  (celda fecha real) se aceptan sin auditar. `"05/06/2026"` (ambiguo) **no** se flaggea.
 - **Números** (`Ctd Ent.(UMV)`, `Cantidad`, `Ocupación`, `SHU`, `CON`, `TOTAL`, `cajas`,
   `cant_bodega_8`, `estibas_consumer/profesional`, `valor`): texto que no es número
   (`s`). Los vacíos legítimos se ignoran.

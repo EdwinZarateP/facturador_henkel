@@ -1,177 +1,101 @@
 let
-    SourceFiles =
-        SharePoint.Files(
-            "https://bluecargogroup.sharepoint.com/sites/Almacenamiento",
-            [ApiVersion = 15]
-        ),
+    SourceFiles = SharePoint.Files("https://bluecargogroup.sharepoint.com/sites/Almacenamiento", [ApiVersion = 15]),
 
-    FilesIngresos0 =
+    FilesExportacion =
         Table.SelectRows(
             SourceFiles,
-            each
-                Text.Contains([Folder Path], "FACTURACION")
+            each Text.Contains([Folder Path], "FACTURACION")
                 and [Attributes]?[Hidden]? <> true
-                and Text.StartsWith(Text.Lower([Name]), "ingresos")
-                and Text.EndsWith(Text.Lower([Name]), ".xlsx")
-        ),
-
-    FilesIngresos =
-        Table.SelectColumns(
-            FilesIngresos0,
-            {"Name", "Content"}
-        ),
-
-    RangosFechasBuffer =
-        Table.Buffer(
-            Table.TransformColumnTypes(
-                Table.SelectColumns(
-                    RANGOS_FECHAS,
-                    {"fecha", "fecha_inicial", "fecha_final"}
-                ),
-                {
-                    {"fecha", type date},
-                    {"fecha_inicial", type date},
-                    {"fecha_final", type date}
-                }
-            )
-        ),
-
-    HuellasBuffer =
-        Table.Buffer(
-            Table.TransformColumnTypes(
-                Table.SelectColumns(
-                    HUELLAS,
-                    {"idh", "fecha", "unidades_pallet", "unidades_caja"}
-                ),
-                {
-                    {"idh", type text},
-                    {"fecha", type date},
-                    {"unidades_pallet", type number},
-                    {"unidades_caja", type number}
-                }
-            )
-        ),
-
-    MaterialEmpaqueBuffer =
-        Table.Buffer(
-            Table.Distinct(
-                Table.TransformColumnTypes(
-                    Table.SelectColumns(
-                        MATERIAL_EMPAQUE,
-                        {"Material"}
-                    ),
-                    {{"Material", type text}}
-                ),
-                {"Material"}
-            )
-        ),
-
-    IdhEspecialesBuffer =
-        Table.Buffer(
-            Table.Distinct(
-                Table.TransformColumnTypes(
-                    Table.SelectColumns(
-                        IDH_ESPECIALES,
-                        {"idh", "negocio_facturador"}
-                    ),
-                    {
-                        {"idh", type text},
-                        {"negocio_facturador", type text}
-                    }
-                ),
-                {"idh"}
-            )
+                and Text.StartsWith([Name], "exportacion")
         ),
 
     AddTransformedTable =
         Table.AddColumn(
-            FilesIngresos,
+            FilesExportacion,
             "Tabla",
-            each #"Transformar archivo (4)"([Content]),
+            each #"Transformar archivo (7)"([Content]),
             type table
         ),
 
-    KeepOnlyNeededCols =
-        Table.SelectColumns(
-            AddTransformedTable,
-            {"Name", "Tabla"}
-        ),
-
+    KeepOnlyNeededCols = Table.SelectColumns(AddTransformedTable, {"Name", "Tabla"}),
     ExpandTransformed =
         Table.ExpandTableColumn(
             KeepOnlyNeededCols,
             "Tabla",
-            {
-                "Posting Date",
-                "Cantidad",
-                "Material",
-                "Texto cab.documento",
-                "Referencia"
-            },
-            {
-                "Posting Date",
-                "Cantidad",
-                "Material",
-                "documento",
-                "referencia"
-            }
+            Table.ColumnNames(#"Transformar archivo (7)"(#"Archivo de ejemplo (7)"))
         ),
-
-    SetTypesEarly =
+    #"Filas filtradas" = Table.SelectRows(ExpandTransformed, each ([Delivery] <> null)),
+    SelectColumnsEarly =
+        Table.SelectColumns(
+            #"Filas filtradas",
+            {"Name", "Delivery", "Fecha factura", "Material", "Texto breve de material", "Ctd Ent.(UMV)", "Canal distribución"}
+        ),
+    SetTypes =
         Table.TransformColumnTypes(
-            ExpandTransformed,
+            SelectColumnsEarly,
             {
                 {"Name", type text},
-                {"Posting Date", type date},
-                {"Cantidad", type number},
+                {"Delivery", type text},
                 {"Material", type text},
-                {"documento", type text},
-                {"referencia", type text}
+                {"Texto breve de material", type text},
+                {"Ctd Ent.(UMV)", Int64.Type},
+                {"Canal distribución", type text},
+                {"Fecha factura", type date}
             }
-        ),
-
-    CleanFileName =
-        Table.ReplaceValue(
-            SetTypesEarly,
-            ".xlsx",
-            "",
-            Replacer.ReplaceText,
-            {"Name"}
         ),
 
     SplitFileName =
         Table.SplitColumn(
-            CleanFileName,
+            SetTypes,
             "Name",
             Splitter.SplitTextByDelimiter("_", QuoteStyle.Csv),
-            {"prefijo_archivo", "area", "fecha"}
+            {"prefijo_archivo", "negocio_raw", "fecha_raw"}
         ),
 
-    RemovePrefix =
-        Table.RemoveColumns(
-            SplitFileName,
-            {"prefijo_archivo"}
+    RemovePrefix = Table.RemoveColumns(SplitFileName, {"prefijo_archivo"}),
+    CleanFechaRaw = Table.ReplaceValue(RemovePrefix, ".xlsx", "", Replacer.ReplaceText, {"fecha_raw"}),
+
+    NormalizeNegocio =
+        Table.TransformColumns(
+            CleanFechaRaw,
+            {{"negocio_raw", each if _ = "cons" then "CONSUMER" else if _ = "prof" then "PROFESIONAL" else _, type text}}
         ),
 
-    SetParsedTypes =
-        Table.TransformColumnTypes(
-            RemovePrefix,
+    SetParsedTypes = Table.TransformColumnTypes(NormalizeNegocio, {{"fecha_raw", type date}}),
+
+    RenameToFinal =
+        Table.RenameColumns(
+            SetParsedTypes,
             {
-                {"area", type text},
-                {"fecha", type date}
+                {"Delivery", "entrega"},
+                {"Material", "material"},
+                {"Texto breve de material", "descripcion"},
+                {"Ctd Ent.(UMV)", "cantidad"},
+                {"Canal distribución", "canal"},
+                {"negocio_raw", "negocio"},
+                {"fecha_raw", "fecha"}
             }
+        ),
+
+    JoinIDHEspeciales =
+        Table.NestedJoin(
+            RenameToFinal,
+            {"material"},
+            IDH_ESPECIALES,
+            {"idh"},
+            "IDH_ESPECIALES",
+            JoinKind.LeftOuter
         ),
 
     JoinRangos =
         Table.NestedJoin(
-            SetParsedTypes,
+            JoinIDHEspeciales,
             {"fecha"},
-            RangosFechasBuffer,
+            RANGOS_FECHAS,
             {"fecha"},
             "RANGOS_FECHAS",
             JoinKind.LeftOuter
         ),
-
     ExpandRangos =
         Table.ExpandTableColumn(
             JoinRangos,
@@ -180,49 +104,39 @@ let
             {"fecha_inicial", "fecha_final"}
         ),
 
-    FilterVentanaDocumento =
-        Table.SelectRows(
+    SetRangeTypes =
+        Table.TransformColumnTypes(
             ExpandRangos,
-            each
-                [fecha_inicial] <> null
-                and [fecha_final] <> null
-                and [Posting Date] <> null
-                and [Posting Date] >= [fecha_inicial]
-                and [Posting Date] <= [fecha_final]
-        ),
-
-    AddDocumentoCruce =
-        Table.AddColumn(
-            FilterVentanaDocumento,
-            "documento_cruce",
-            each if [referencia] <> null then [referencia] else [documento],
-            type text
-        ),
-
-    FilterDocumentoCruce =
-        Table.SelectRows(
-            AddDocumentoCruce,
-            each [documento_cruce] <> null
-        ),
-
-    RemoveDocumentoAux =
-        Table.RemoveColumns(
-            FilterDocumentoCruce,
             {
-                "Posting Date",
-                "fecha_inicial",
-                "fecha_final",
-                "documento",
-                "referencia",
-                "documento_cruce"
+                {"fecha_inicial", type date},
+                {"fecha_final", type date}
             }
         ),
 
+    AddFlagVentanaFactura =
+        Table.AddColumn(
+            SetRangeTypes,
+            "en_ventana_factura",
+            each
+                [fecha_inicial] <> null
+                and [fecha_final] <> null
+                and [Fecha factura] <> null
+                and [Fecha factura] >= [fecha_inicial]
+                and [Fecha factura] <= [fecha_final],
+            type logical
+        ),
+
+    FilterVentanaFactura = Table.SelectRows(AddFlagVentanaFactura, each [en_ventana_factura] = true),
+
+    RemoveFlag = Table.RemoveColumns(FilterVentanaFactura, {"en_ventana_factura"}),
+
+    #"Columna duplicada" = Table.DuplicateColumn(RemoveFlag, "negocio", "negocio_facturador"),
+
     JoinHuellas =
         Table.NestedJoin(
-            RemoveDocumentoAux,
-            {"Material", "fecha"},
-            HuellasBuffer,
+            #"Columna duplicada",
+            {"material", "fecha"},
+            HUELLAS,
             {"idh", "fecha"},
             "HUELLAS",
             JoinKind.LeftOuter
@@ -236,321 +150,64 @@ let
             {"unidades_pallet", "unidades_caja"}
         ),
 
-    AddCalculosRecibo =
+    AddPallets =
         Table.AddColumn(
             ExpandHuellas,
-            "calculos_recibo",
-            each
-                let
-                    cantidad = [Cantidad],
-                    unidadesPallet = [unidades_pallet],
-                    unidadesCaja = [unidades_caja],
-
-                    reciboCajas =
-                        if unidadesCaja = null or unidadesCaja = 0
-                        then null
-                        else Number.RoundUp(cantidad / unidadesCaja),
-
-                    reciboPallets =
-                        if unidadesPallet = null or unidadesPallet = 0
-                        then null
-                        else Number.IntegerDivide(cantidad, unidadesPallet),
-
-                    unidadesResiduo =
-                        if unidadesPallet = null or unidadesPallet = 0
-                        then null
-                        else Number.Mod(cantidad, unidadesPallet),
-
-                    unidadesPalletME =
-                        if unidadesPallet = null or reciboPallets = null
-                        then null
-                        else unidadesPallet * reciboPallets,
-
-                    cajasMaterial =
-                        if unidadesCaja = null or unidadesCaja = 0 or unidadesResiduo = null
-                        then null
-                        else Number.RoundUp(unidadesResiduo / unidadesCaja)
-                in
-                    [
-                        #"RECIBO CAJAS" = reciboCajas,
-                        #"RECIBO PALLETS" = reciboPallets,
-                        #"RECIBO UNIDADES" = cantidad,
-                        #"UNIDADES RESIDUO" = unidadesResiduo,
-                        #"UNIDADES PALLET ME" = unidadesPalletME,
-                        #"CAJAS MATERIAL" = cajasMaterial
-                    ],
-            type record
+            "pallets",
+            each if [unidades_pallet] = null or [unidades_pallet] = 0 then null else Number.RoundUp([cantidad] / [unidades_pallet]),
+            Int64.Type
         ),
 
-    ExpandCalculosRecibo =
-        Table.ExpandRecordColumn(
-            AddCalculosRecibo,
-            "calculos_recibo",
-            {
-                "RECIBO CAJAS",
-                "RECIBO PALLETS",
-                "RECIBO UNIDADES",
-                "UNIDADES RESIDUO",
-                "UNIDADES PALLET ME",
-                "CAJAS MATERIAL"
-            },
-            {
-                "RECIBO CAJAS",
-                "RECIBO PALLETS",
-                "RECIBO UNIDADES",
-                "UNIDADES RESIDUO",
-                "UNIDADES PALLET ME",
-                "CAJAS MATERIAL"
-            }
-        ),
-
-    RemoveHuellasAux =
-        Table.RemoveColumns(
-            ExpandCalculosRecibo,
-            {"unidades_pallet", "unidades_caja"}
-        ),
-
-    JoinMaterialEmpaque =
-        Table.NestedJoin(
-            RemoveHuellasAux,
-            {"Material"},
-            MaterialEmpaqueBuffer,
-            {"Material"},
-            "MATERIAL_EMPAQUE",
-            JoinKind.LeftOuter
-        ),
-
-    ExpandMaterialEmpaque =
-        Table.ExpandTableColumn(
-            JoinMaterialEmpaque,
-            "MATERIAL_EMPAQUE",
-            {"Material"},
-            {"material_empaque_match"}
-        ),
-
-    JoinIDHEspeciales =
-        Table.NestedJoin(
-            ExpandMaterialEmpaque,
-            {"Material"},
-            IdhEspecialesBuffer,
-            {"idh"},
-            "IDH_ESPECIALES",
-            JoinKind.LeftOuter
-        ),
-
-    ExpandIDHEspeciales =
-        Table.ExpandTableColumn(
-            JoinIDHEspeciales,
-            "IDH_ESPECIALES",
-            {"negocio_facturador"},
-            {"idh_negocio_facturador"}
-        ),
-
-    AddNegocios =
+    AddCajas =
         Table.AddColumn(
-            ExpandIDHEspeciales,
-            "negocios",
-            each
-                let
-                    areaNormalizada =
-                        if [area] = "cons" then "CONSUMER"
-                        else if [area] = "prof" then "PROFESIONAL"
-                        else [area],
-
-                    negocioFacturador =
-                        if [material_empaque_match] <> null then
-                            "MATERIAL DE EMPAQUE"
-                        else if [idh_negocio_facturador] <> null then
-                            [idh_negocio_facturador]
-                        else
-                            areaNormalizada,
-
-                    negocio =
-                        if negocioFacturador = "MATERIAL DE EMPAQUE" then
-                            "MATERIAL DE EMPAQUE"
-                        else
-                            areaNormalizada
-                in
-                    [
-                        negocio = negocio,
-                        negocio_facturador = negocioFacturador
-                    ],
-            type record
+            AddPallets,
+            "cajas",
+            each if [unidades_caja] = null or [unidades_caja] = 0 then null else Number.RoundUp([cantidad] / [unidades_caja]),
+            Int64.Type
         ),
 
-    ExpandNegocios =
-        Table.ExpandRecordColumn(
-            AddNegocios,
-            "negocios",
-            {"negocio", "negocio_facturador"},
-            {"negocio", "negocio_facturador"}
-        ),
-
-    SelectForGroup =
-        Table.SelectColumns(
-            ExpandNegocios,
-            {
-                "fecha",
-                "negocio",
-                "negocio_facturador",
-                "RECIBO CAJAS",
-                "RECIBO PALLETS",
-                "RECIBO UNIDADES",
-                "CAJAS MATERIAL",
-                "UNIDADES RESIDUO",
-                "UNIDADES PALLET ME"
-            }
+    AddUnidades =
+        Table.AddColumn(
+            AddCajas,
+            "unidades",
+            each if [unidades_caja] = null or [cajas] = null then null else [unidades_caja] * [cajas],
+            Int64.Type
         ),
 
     Grouped =
         Table.Group(
-            SelectForGroup,
-            {"fecha", "negocio", "negocio_facturador"},
+            AddUnidades,
+            {"fecha", "negocio", "negocio_facturador", "canal"},
             {
-                {"RECIBO CAJAS", each List.Sum(List.RemoveNulls(Table.Column(_, "RECIBO CAJAS"))), type nullable number},
-                {"RECIBO PALLETS", each List.Sum(List.RemoveNulls(Table.Column(_, "RECIBO PALLETS"))), type nullable number},
-                {"RECIBO UNIDADES", each List.Sum(List.RemoveNulls(Table.Column(_, "RECIBO UNIDADES"))), type nullable number},
-                {"RECIBO CAJAS ME", each List.Sum(List.RemoveNulls(Table.Column(_, "CAJAS MATERIAL"))), type nullable number},
-                {"RECIBO UNIDADES ME", each List.Sum(List.RemoveNulls(Table.Column(_, "UNIDADES RESIDUO"))), type nullable number},
-                {"UNIDADES PALLET ME", each List.Sum(List.RemoveNulls(Table.Column(_, "UNIDADES PALLET ME"))), type nullable number}
+                {"ALISTAMIENTO Y DESPACHO PALLETS EXPO", each List.Sum([pallets]), type number},
+                {"ALISTAMIENTO Y DESPACHO CAJAS EXPO", each List.Sum([cajas]), type number},
+                {"ALISTAMIENTO Y DESPACHO UND EXPO", each List.Sum([unidades]), type number}
             }
         ),
+
+    DuplicateUND = Table.DuplicateColumn(Grouped, "ALISTAMIENTO Y DESPACHO UND EXPO", "unidades"),
 
     UnpivotServicios =
         Table.UnpivotOtherColumns(
-            Grouped,
-            {
-                "negocio",
-                "negocio_facturador",
-                "fecha",
-                "RECIBO UNIDADES",
-                "RECIBO UNIDADES ME",
-                "UNIDADES PALLET ME"
-            },
-            "atributo",
+            DuplicateUND,
+            {"fecha", "negocio", "negocio_facturador", "canal", "unidades"},
+            "atributo_servicio",
             "valor"
         ),
 
-    FixAtributoME =
-        Table.AddColumn(
-            UnpivotServicios,
-            "atributo_final",
-            each
-                if [negocio_facturador] = "MATERIAL DE EMPAQUE"
-                    and [atributo] = "RECIBO PALLETS"
-                then "RECIBO PALLETS ME"
-                else [atributo],
-            type text
-        ),
+    AddServicio = Table.AddColumn(UnpivotServicios, "servicio", each [atributo_servicio] & " " & [canal], type text),
 
-    RemoveAtributo =
-        Table.RemoveColumns(
-            FixAtributoME,
-            {"atributo"}
-        ),
+    RemoveServicioAux = Table.RemoveColumns(AddServicio, {"canal", "atributo_servicio"}),
 
-    RenameAtributo =
-        Table.RenameColumns(
-            RemoveAtributo,
-            {{"atributo_final", "atributo"}}
-        ),
+    ReorderFinal = Table.ReorderColumns(RemoveServicioAux, {"fecha", "negocio", "negocio_facturador", "servicio", "valor", "unidades"}),
 
-    FilterServicios =
-        Table.SelectRows(
-            RenameAtributo,
-            each
-                not ([atributo] = "RECIBO CAJAS ME" and [negocio_facturador] <> "MATERIAL DE EMPAQUE")
-                and not ([negocio_facturador] = "MATERIAL DE EMPAQUE" and [atributo] = "RECIBO CAJAS")
-                and [atributo] <> "RECIBO PALLETS"
-        ),
+    AddProcesoExtendido = Table.AddColumn(ReorderFinal, "proceso_extendido", each "PICKING " & [negocio], type text),
 
-    AddUnidadesServicio =
-        Table.AddColumn(
-            FilterServicios,
-            "unidades",
-            each
-                if [atributo] = "RECIBO CAJAS" then [RECIBO UNIDADES]
-                else if [atributo] = "RECIBO CAJAS ME" then [RECIBO UNIDADES ME]
-                else [UNIDADES PALLET ME],
-            type number
-        ),
+    AddMacroProceso = Table.AddColumn(AddProcesoExtendido, "macro_proceso", each "OUT BOUND", type text),
 
-    RemoveUnidadRefs =
-        Table.RemoveColumns(
-            AddUnidadesServicio,
-            {"RECIBO UNIDADES", "RECIBO UNIDADES ME", "UNIDADES PALLET ME"}
-        ),
+    AddProcesoAbreviado = Table.AddColumn(AddMacroProceso, "proceso_abreviado", each "OUB", type text),
 
-    RenameServicio =
-        Table.RenameColumns(
-            RemoveUnidadRefs,
-            {{"atributo", "servicio"}}
-        ),
+    AddTabla = Table.AddColumn(AddProcesoAbreviado, "tabla", each "EXPORTACIONES", type text)
 
-    AddConstantes =
-        Table.AddColumn(
-            RenameServicio,
-            "constantes",
-            each
-                [
-                    proceso_extendido = "RECIBO",
-                    macro_proceso = "IN BOUND",
-                    proceso_abreviado = "INB",
-                    tabla = "INGRESOS"
-                ],
-            type record
-        ),
-
-    ExpandConstantes =
-        Table.ExpandRecordColumn(
-            AddConstantes,
-            "constantes",
-            {
-                "proceso_extendido",
-                "macro_proceso",
-                "proceso_abreviado",
-                "tabla"
-            },
-            {
-                "proceso_extendido",
-                "macro_proceso",
-                "proceso_abreviado",
-                "tabla"
-            }
-        ),
-
-    SetOutputTypes =
-        Table.TransformColumnTypes(
-            ExpandConstantes,
-            {
-                {"fecha", type date},
-                {"negocio", type text},
-                {"negocio_facturador", type text},
-                {"servicio", type text},
-                {"valor", type number},
-                {"unidades", type number},
-                {"proceso_extendido", type text},
-                {"macro_proceso", type text},
-                {"proceso_abreviado", type text},
-                {"tabla", type text}
-            }
-        ),
-
-    ReorderOutput =
-        Table.ReorderColumns(
-            SetOutputTypes,
-            {
-                "fecha",
-                "negocio",
-                "negocio_facturador",
-                "servicio",
-                "valor",
-                "unidades",
-                "proceso_extendido",
-                "macro_proceso",
-                "proceso_abreviado",
-                "tabla"
-            }
-        )
 in
-    ReorderOutput
+    AddTabla

@@ -143,7 +143,10 @@ def audit_value_column(raw, col_label: str, kind: str, file: str, extra_valid=()
     - kind="date": sobre valores str no-vacíos detecta (a) inválidas (NaT al
       parsear) y (b) formato invertido mm/dd (string "d/m/..." con mes≤12 y día>12,
       p. ej. "02/21/2026"). Los datetime nativos de Excel (dtype datetime64) se
-      aceptan sin auditar (Excel ya los validó como fecha real).
+      aceptan sin auditar (Excel ya los validó como fecha real). Los **números**
+      sueltos (p. ej. 45951 = número de serie de Excel sin formato de fecha) se
+      marcan como error: `pd.to_datetime` los leería como ns desde 1970 y el paso
+      se omitiría silenciosamente como "0 filas en el rango".
       Limitación: si Excel convirtió el valor a fecha real (locale en-US), el
       invertido ya no es detectable a posteriori.
     - kind="money": celdas no-vacías que `_parse_dinero` no convierte (para
@@ -189,6 +192,27 @@ def audit_value_column(raw, col_label: str, kind: str, file: str, extra_valid=()
         # datetime64 puro -> Excel ya validó las fechas; nada que auditar.
         if pd.api.types.is_datetime64_any_dtype(raw):
             return []
+        # Números sueltos en columna de fecha: Excel dejó la fecha como número de
+        # serie (p. ej. 45951) sin formato de fecha. `pd.to_datetime` los leería
+        # como nanosegundos desde 1970 -> fechas absurdas y el filtro por rango
+        # daría 0 filas (el paso se omitiría silenciosamente como "0 filas en el
+        # rango"). Se marca como error para que se corrija el formato en la fuente.
+        num_mask = nonblank & raw.map(
+            lambda v: pd.api.types.is_number(v) and not isinstance(v, bool)
+        )
+        n_num = int(num_mask.sum())
+        if n_num:
+            ex = ", ".join(f"'{e}'" for e in raw[num_mask].head(2).tolist())
+            return [{
+                "severity": "error",
+                "kind": "audit",
+                "file": file,
+                "msg": (
+                    f"{n_num} celda(s) con número en columna de fecha '{col_label}' "
+                    f"(¿formato de fecha perdido en Excel? Ej: {ex}). Corrija el "
+                    f"formato a fecha real y vuelva a generar."
+                ),
+            }]
         # Solo auditan los strings (fechas que Excel dejó como texto, p. ej.
         # "02/21/2026" que un locale dd/mm no reconoce y por tanto no convirtió).
         str_mask = nonblank & raw.map(lambda v: isinstance(v, str))
