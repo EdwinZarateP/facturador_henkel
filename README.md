@@ -87,7 +87,10 @@ Requisitos (ya instalados en este entorno): Python 3.13, `fastapi`, `uvicorn`,
    (p. ej. **EXTRA E.S**); si no → **NORMAL**.
 7. **`tipo_despacho`**: cruza el cliente (`Nombre completo con tratamiento y título`)
    con `CEDI` de `AUXILIARES/tipo_despacho.xlsx`. Si hay match → el `TIPO`
-   (**CROSS DOCKING**); si no → **ESTANDAR**.
+   (**CROSS DOCKING**); si no → **ESTANDAR**. El cliente se **coalesce** con su
+   campo gemelo antes del cruce (ver *Reglas de negocio*): la exportación SAP trae
+   esa columna **duplicada**; donde la 1ª viene vacía se rellena con la 2ª (que suele
+   traer el dato), de modo que esas filas sí puedan matchear un CEDI.
 8. **`AddServicio`** (de `logica.txt`, ~15 ramas): desdinamiza cada grupo en hasta
    3 medidas (**PICKING PALLETS / CAJAS / UNIDADES**) y asigna un **`servicio`**
    según `(negocio_facturador, tipo_trabajo, tipo_despacho, atributo)`. Luego
@@ -988,6 +991,15 @@ proceso_extendido, macro_proceso, proceso_abreviado, tabla`.
   CEDI/cliente vía `io_utils.normalize` (mayúsculas, sin acentos ni puntuación).
 - **`Material` aparece duplicado** en los salidas (col 16 y col 66). Se usa la
   **1ª ocurrencia** (col 16).
+- **`Nombre completo con tratamiento y título` también está duplicado** (col 7 y col 9,
+  el "campo gemelo"; pandas renombra la 2ª a `...título.1` al leer). A diferencia del
+  `Material`, aquí **se coalesce**: donde la 1ª (col 7) viene vacía se rellena con la
+  2ª (col 9), que suele traer el dato. Ocurre en `read_salidas` (camino rápido: se lee
+  la col 9 junto a las 5 core y se coalesce en `_select_salidas`; fallback robusto:
+  `_coalesce_cliente_columns` coalesce todas las tipo-cliente) **antes** del cruce con
+  `tipo_despacho`, para que esas filas puedan matchear un CEDI (→ CROSS DOCKING).
+  Ej.: en `salidas_cons_01-06-2025.xlsx`, 2.265 filas recuperan su cliente y 33 pasan
+  de ESTANDAR a CROSS DOCKING.
 - **Emparejamiento de columnas por nombre normalizado** (sin acentos, mayúsculas,
   solo alfanum) para sobrevivir a re-exportaciones. La lectura usa un **camino rápido**
   por posición (`SALIDAS_FAST_POSITIONS`) con verificación por nombre y **fallback

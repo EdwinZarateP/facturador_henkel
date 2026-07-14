@@ -283,31 +283,74 @@ def pick_salidas_sheet(path: Path) -> str:
 _FAST_NORMALIZED = [normalize(config.SALIDAS_COLS[k]) for k in ("delivery", "cliente", "material", "cantidad", "fecha")]
 
 
+def _is_blank_series(s: pd.Series) -> pd.Series:
+    """Máscara booleana: True donde `s` está vacío (NaN o texto en blanco)."""
+    return s.isna() | (s.astype(str).str.strip() == "")
+
+
+def _coalesce_text(primary: pd.Series, secondary: pd.Series) -> pd.Series:
+    """Rellena los huecos de `primary` (NaN o texto en blanco) con `secondary`.
+
+    Se usa para el "campo gemelo" de cliente: donde el 1º viene vacío, toma el 2º.
+    Devuelve una Series nueva; no muta las entradas.
+    """
+    return primary.where(~_is_blank_series(primary), secondary)
+
+
+def _coalesce_cliente_columns(full: pd.DataFrame, fcols, file: str) -> pd.Series:
+    """Coalesce de TODAS las columnas tipo-cliente (el 1º + sus gemelos ".1"/".2"...).
+
+    La exportación SAP trae "Nombre completo con tratamiento y título" duplicada; al
+    leer, pandas renombra la 2ª a "...título.1" (normaliza a "...TITULO1"). Se toman
+    todas las columnas cuyo nombre normalizado EMPIEZA por el del cliente, en orden de
+    archivo, y se rellenan los huevos del 1º con los siguientes. Usado en el fallback
+    robusto (camino completo por nombre).
+    """
+    base = normalize(config.SALIDAS_COLS["cliente"])
+    matches = [c for c in fcols if base and normalize(c).startswith(base)]
+    if not matches:
+        raise KeyError(
+            f"No se encontró la columna de cliente '{config.SALIDAS_COLS['cliente']}' "
+            f"(normalizada '{base}') en {file}. Columnas disponibles: {list(fcols)}"
+        )
+    serie = full[matches[0]]
+    for col in matches[1:]:
+        serie = _coalesce_text(serie, full[col])
+    return serie
+
+
 def read_salidas(path: Path, area: str, audit: list | None = None) -> pd.DataFrame:
     """Lee un archivo de salidas y devuelve [delivery, cliente, material, cantidad, fecha, area].
 
     Estrategia de rendimiento:
-    - Camino rápido: lee SOLO las 5 columnas en posiciones conocidas en un único
-      parseo (calamine honra usecols). Verifica que los nombres cuadren.
+    - Camino rápido: lee SOLO las 5 columnas core en posiciones conocidas + el gemelo
+      de cliente (6ª), en un único parseo (calamine honra usecols). Verifica que los
+      nombres de las 5 core cuadren. El gemelo se coalesce contra el cliente en
+      `_select_salidas` (rellena los huecos del 1º con el 2º).
     - Fallback robusto: si el layout cambió, lee la hoja completa y selecciona por
-      nombre (maneja el "Material" duplicado tomando la 1ª ocurrencia).
+      nombre (maneja el "Material" duplicado tomando la 1ª ocurrencia; coalescea todas
+      las columnas tipo-cliente vía `_coalesce_cliente_columns`).
     Cada archivo se abre una sola vez (calamine parsea el archivo entero en cada
     llamada, así que se minimizan los parseos).
     """
     engine = excel_engine()
     xls = pd.ExcelFile(path, engine=engine)
     last_err = None
+    # Camino rápido: las 5 columnas core + el gemelo de cliente (al final).
+    fast_usecols = config.SALIDAS_FAST_POSITIONS + [config.SALIDAS_CLIENTE_TWIN_POSITION]
     for sheet in xls.sheet_names:
         # Camino rápido: posiciones conocidas.
         try:
-            df = xls.parse(sheet_name=sheet, usecols=config.SALIDAS_FAST_POSITIONS)
+            df = xls.parse(sheet_name=sheet, usecols=fast_usecols)
         except Exception as exc:
             last_err = exc
             continue
         if df is None or df.empty:
             continue
         norm_cols = [normalize(c) for c in df.columns]
-        if norm_cols == _FAST_NORMALIZED:
+        # Las 5 primeras (índices 0-4) deben ser las columnas core conocidas; la 6ª
+        # (índice 5) es el gemelo de cliente (o cualquier otra cosa si no existe).
+        if norm_cols[:5] == _FAST_NORMALIZED:
             return _select_salidas(df, area, audit, path.name)
         # El layout cambió: fallback robusto con lectura completa de esta hoja.
         full = xls.parse(sheet_name=sheet)
@@ -319,7 +362,7 @@ def read_salidas(path: Path, area: str, audit: list | None = None) -> pd.DataFra
             audit.extend(audit_value_column(raw_fecha, config.SALIDAS_COLS["fecha"], "date", path.name))
         out = pd.DataFrame()
         out["delivery"] = full[find_column(fcols, config.SALIDAS_COLS["delivery"])]
-        out["cliente"] = full[find_column(fcols, config.SALIDAS_COLS["cliente"], occurrence=0)]
+        out["cliente"] = _coalesce_cliente_columns(full, fcols, path.name)
         out["material"] = full[find_column(fcols, config.SALIDAS_COLS["material"], occurrence=0)]
         out["cantidad"] = pd.to_numeric(raw_cantidad, errors="coerce")
         out["fecha"] = pd.to_datetime(raw_fecha, errors="coerce")
@@ -331,10 +374,22 @@ def read_salidas(path: Path, area: str, audit: list | None = None) -> pd.DataFra
 
 
 def _select_salidas(df: pd.DataFrame, area: str, audit: list | None = None, file: str | None = None) -> pd.DataFrame:
-    """Selecciona/limpia las columnas ya leídas por posición (camino rápido)."""
+    """Selecciona/limpia las columnas ya leídas por posición (camino rápido).
+
+    Índices del df leído por posición: 0=delivery, 1=cliente, 2=material,
+    3=cantidad, 4=fecha y 5=gemelo de cliente (el "...título.1"). Donde el cliente
+    (1) viene vacío, se rellena con el gemelo (5) — si éste es realmente una columna
+    de cliente (guarda de seguridad por si el layout no trajera gemelo).
+    """
     out = pd.DataFrame()
     out["delivery"] = df.iloc[:, 0]
-    out["cliente"] = df.iloc[:, 1]
+    cliente = df.iloc[:, 1]
+    if df.shape[1] >= 6:
+        twin = df.iloc[:, 5]
+        base = normalize(config.SALIDAS_COLS["cliente"])
+        if base and normalize(str(df.columns[5])).startswith(base):
+            cliente = _coalesce_text(cliente, twin)
+    out["cliente"] = cliente
     out["material"] = df.iloc[:, 2]
     out["cantidad"] = pd.to_numeric(df.iloc[:, 3], errors="coerce")
     out["fecha"] = pd.to_datetime(df.iloc[:, 4], errors="coerce")

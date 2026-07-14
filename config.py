@@ -175,6 +175,9 @@ LOCK_PREFIX = "~$"
 
 # salidas_cons / salidas_prof (hoja con la cabecera MATERIAL, fila 1).
 # "Material" aparece dos veces en el archivo; se usa la 1ª ocurrencia (occurrence=0).
+# "Nombre completo con tratamiento y título" TAMBIÉN aparece dos veces (el "campo
+# gemelo"); se coalesce: donde el 1º viene vacío se rellena con el 2º (algunas filas
+# traen el 1º vacío y el 2º lleno). El cruce con tipo_despacho se hace tras el coalesce.
 SALIDAS_COLS = {
     "delivery": "Delivery",
     "cliente": "Nombre completo con tratamiento y título",
@@ -188,6 +191,11 @@ SALIDAS_COLS = {
 # verifican por nombre. Si el layout cambiara, se cae al fallback robusto (lectura
 # completa + emparejamiento por nombre). Orden: delivery, cliente, material, cantidad, fecha.
 SALIDAS_FAST_POSITIONS = [0, 7, 16, 19, 63]
+
+# Posición del "campo gemelo" de cliente: el 2º "Nombre completo con tratamiento y
+# título" (pandas lo renombra a "...título.1" al leer el encabezado duplicado). Se lee
+# junto con las 5 core (al final del usecols) para coalesce los huecos del 1º.
+SALIDAS_CLIENTE_TWIN_POSITION = 9
 
 # huellas.xlsx: los encabezados empiezan en la fila 2 (header=1 en pandas).
 HUELLAS_HEADER_ROW = 1  # índice 0-based -> fila física 2
