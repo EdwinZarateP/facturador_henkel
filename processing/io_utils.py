@@ -279,8 +279,13 @@ def pick_salidas_sheet(path: Path) -> str:
     raise KeyError(f"El archivo {path.name} no tiene ninguna hoja con columna 'Material'.")
 
 
-# Nombres esperados (normalizados) de las columnas en el camino rápido.
+# Nombres esperados (normalizados) de las columnas core en el camino rápido.
+# Orden del df leído con usecols ORDENADO [0,7,9,16,19,63]:
+#   idx 0=delivery, 1=cliente, 2=GEMELO de cliente, 3=material, 4=cantidad, 5=fecha.
+# El gemelo (idx 2) no se valida por nombre (pandas lo renombra a ".1"); se valida
+# con una guarda startswith en _select_salidas. Las 5 core ocupan los índices 0,1,3,4,5.
 _FAST_NORMALIZED = [normalize(config.SALIDAS_COLS[k]) for k in ("delivery", "cliente", "material", "cantidad", "fecha")]
+_FAST_CORE_DF_INDICES = (0, 1, 3, 4, 5)
 
 
 def _is_blank_series(s: pd.Series) -> pd.Series:
@@ -336,8 +341,11 @@ def read_salidas(path: Path, area: str, audit: list | None = None) -> pd.DataFra
     engine = excel_engine()
     xls = pd.ExcelFile(path, engine=engine)
     last_err = None
-    # Camino rápido: las 5 columnas core + el gemelo de cliente (al final).
-    fast_usecols = config.SALIDAS_FAST_POSITIONS + [config.SALIDAS_CLIENTE_TWIN_POSITION]
+    # Camino rápido: las 5 columnas core + el gemelo de cliente, ORDENADAS por posición.
+    # Importante: calamine/devuelve las columnas de usecols ordenadas por posición, así
+    # que el gemelo (col 9) QEDA EN EL ÍNDICE 2 del df (no al final). Si no se ordena,
+    # la validación falla y se cae al fallback (lectura completa = +15s por archivo).
+    fast_usecols = sorted(config.SALIDAS_FAST_POSITIONS + [config.SALIDAS_CLIENTE_TWIN_POSITION])
     for sheet in xls.sheet_names:
         # Camino rápido: posiciones conocidas.
         try:
@@ -348,9 +356,11 @@ def read_salidas(path: Path, area: str, audit: list | None = None) -> pd.DataFra
         if df is None or df.empty:
             continue
         norm_cols = [normalize(c) for c in df.columns]
-        # Las 5 primeras (índices 0-4) deben ser las columnas core conocidas; la 6ª
-        # (índice 5) es el gemelo de cliente (o cualquier otra cosa si no existe).
-        if norm_cols[:5] == _FAST_NORMALIZED:
+        # Validar las 5 core en sus índices del layout ordenado (0,1,3,4,5); el índice
+        # 2 es el gemelo de cliente (no se valida por nombre aquí).
+        if len(norm_cols) >= 6 and all(
+            norm_cols[idx] == _FAST_NORMALIZED[j] for j, idx in enumerate(_FAST_CORE_DF_INDICES)
+        ):
             return _select_salidas(df, area, audit, path.name)
         # El layout cambió: fallback robusto con lectura completa de esta hoja.
         full = xls.parse(sheet_name=sheet)
@@ -376,28 +386,27 @@ def read_salidas(path: Path, area: str, audit: list | None = None) -> pd.DataFra
 def _select_salidas(df: pd.DataFrame, area: str, audit: list | None = None, file: str | None = None) -> pd.DataFrame:
     """Selecciona/limpia las columnas ya leídas por posición (camino rápido).
 
-    Índices del df leído por posición: 0=delivery, 1=cliente, 2=material,
-    3=cantidad, 4=fecha y 5=gemelo de cliente (el "...título.1"). Donde el cliente
-    (1) viene vacío, se rellena con el gemelo (5) — si éste es realmente una columna
-    de cliente (guarda de seguridad por si el layout no trajera gemelo).
+    Índices del df leído con usecols ORDENADO [0,7,9,16,19,63]:
+    0=delivery, 1=cliente, 2=GEMELO de cliente, 3=material, 4=cantidad, 5=fecha.
+    Donde el cliente (1) viene vacío, se rellena con el gemelo (2) — si éste es
+    realmente una columna de cliente (guarda por si el layout no trajera gemelo).
     """
     out = pd.DataFrame()
     out["delivery"] = df.iloc[:, 0]
     cliente = df.iloc[:, 1]
-    if df.shape[1] >= 6:
-        twin = df.iloc[:, 5]
-        base = normalize(config.SALIDAS_COLS["cliente"])
-        if base and normalize(str(df.columns[5])).startswith(base):
-            cliente = _coalesce_text(cliente, twin)
+    twin = df.iloc[:, 2]
+    base = normalize(config.SALIDAS_COLS["cliente"])
+    if base and normalize(str(df.columns[2])).startswith(base):
+        cliente = _coalesce_text(cliente, twin)
     out["cliente"] = cliente
-    out["material"] = df.iloc[:, 2]
-    out["cantidad"] = pd.to_numeric(df.iloc[:, 3], errors="coerce")
-    out["fecha"] = pd.to_datetime(df.iloc[:, 4], errors="coerce")
+    out["material"] = df.iloc[:, 3]
+    out["cantidad"] = pd.to_numeric(df.iloc[:, 4], errors="coerce")
+    out["fecha"] = pd.to_datetime(df.iloc[:, 5], errors="coerce")
     out["area"] = area
     if audit is not None and file is not None:
-        # Auditar las columnas crudas (posición 3=cantidad, 4=fecha) antes del coerce.
-        audit.extend(audit_value_column(df.iloc[:, 3], config.SALIDAS_COLS["cantidad"], "number", file))
-        audit.extend(audit_value_column(df.iloc[:, 4], config.SALIDAS_COLS["fecha"], "date", file))
+        # Auditar las columnas crudas (índice 4=cantidad, 5=fecha) antes del coerce.
+        audit.extend(audit_value_column(df.iloc[:, 4], config.SALIDAS_COLS["cantidad"], "number", file))
+        audit.extend(audit_value_column(df.iloc[:, 5], config.SALIDAS_COLS["fecha"], "date", file))
     return out
 
 

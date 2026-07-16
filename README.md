@@ -1406,5 +1406,10 @@ El usuario construye **paso a paso**:
   no van al Excel (sólo internos). Columnas: `excel_export.SERVICIO_COLUMNS`.
 - **No rompas el camino rápido** de `read_salidas` (posiciones + verificación por nombre):
   calamine parsea el archivo entero en cada llamada, así que hay que minimizar parseos.
+  **Gotcha calamine:** `usecols` con enteros se devuelve **ordenado por posición** (no en
+  el orden pasado). Si añades una columna whose índice quede "en medio" (p. ej. el gemelo
+  de cliente, col 9, entre 7 y 16), hay que validar/usar el layout **ordenado** `[0,7,9,16,19,63]`
+  (gemelo en idx 2); si no, la validación posicional falla en silencio y se cae al fallback
+  de lectura completa (~+15 s por archivo — así se coló una regresión de +30 s una vez).
 - Mantén la separación processing (sin web) ↔ api/static.
 - Valida cualquier cambio contra la **línea base** de arriba.
