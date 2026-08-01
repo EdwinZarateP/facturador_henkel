@@ -459,7 +459,10 @@ def read_ingresos(path: Path, area: str, audit: list | None = None) -> pd.DataFr
             if audit is not None:
                 audit.extend(audit_value_column(raw_posting, config.INGRESOS_COLS["posting_date"], "date", path.name))
                 audit.extend(audit_value_column(raw_cantidad, config.INGRESOS_COLS["cantidad"], "number", path.name))
-            out["posting_date"] = pd.to_datetime(raw_posting, errors="coerce")
+            # dayfirst=True: Posting Date viene como TEXTO europeo "dd.mm.yyyy"; sin
+            # dayfirst, pandas cachea el orden desde la 1ª fila y puede leer mes-primero
+            # (fechas fuera de rango -> paso omitido en silencio). Ver read_exportacion.
+            out["posting_date"] = pd.to_datetime(raw_posting, errors="coerce", dayfirst=True)
             out["cantidad"] = pd.to_numeric(raw_cantidad, errors="coerce")
             out["material"] = df[find_column(cols, config.INGRESOS_COLS["material"])]
             out["documento"] = df[find_column(cols, config.INGRESOS_COLS["documento"])]
@@ -659,7 +662,8 @@ def read_maquila(path: Path, area: str, audit: list | None = None) -> pd.DataFra
             if audit is not None:
                 audit.extend(audit_value_column(raw_posting, config.MAQUILA_COLS["posting_date"], "date", path.name))
                 audit.extend(audit_value_column(raw_cantidad, config.MAQUILA_COLS["cantidad"], "number", path.name))
-            out["posting_date"] = pd.to_datetime(raw_posting, errors="coerce")
+            # dayfirst=True: Posting Date como TEXTO europeo "dd.mm.yyyy" (ver read_exportacion).
+            out["posting_date"] = pd.to_datetime(raw_posting, errors="coerce", dayfirst=True)
             out["cantidad"] = pd.to_numeric(raw_cantidad, errors="coerce")
             out["material"] = df[find_column(cols, config.MAQUILA_COLS["material"])]
         except KeyError:
@@ -729,7 +733,13 @@ def read_exportacion(path: Path, area: str, audit: list | None = None) -> pd.Dat
                 audit.extend(audit_value_column(raw_fecha, config.EXPORTACION_COLS["fecha"], "date", path.name))
                 audit.extend(audit_value_column(raw_cantidad, config.EXPORTACION_COLS["cantidad"], "number", path.name))
             out["delivery"] = df[find_column(cols, config.EXPORTACION_COLS["delivery"])]
-            out["fecha"] = pd.to_datetime(raw_fecha, errors="coerce")
+            # dayfirst=True: los export de SAP vienen como TEXTO europeo "dd.mm.yyyy"
+            # (con puntos), no como fecha nativa de Excel. Sin dayfirst, pandas cachea
+            # el orden de fecha desde la 1ª fila: si arranca con día > 12 (p. ej.
+            # "21.11.2025") lo lee bien, pero si arranca ambiguo ("02.12.2025") lo lee
+            # mes-primero, corrompe las fechas del archivo (caen fuera de rango) y el
+            # servicio desaparece en silencio. dayfirst=True es determinista para ambos.
+            out["fecha"] = pd.to_datetime(raw_fecha, errors="coerce", dayfirst=True)
             out["material"] = df[find_column(cols, config.EXPORTACION_COLS["material"])]
             out["cantidad"] = pd.to_numeric(raw_cantidad, errors="coerce")
             out["canal"] = df[find_column(cols, config.EXPORTACION_COLS["canal"])]
@@ -1042,7 +1052,8 @@ def read_material(path: Path, audit: list | None = None) -> pd.DataFrame:
             if audit is not None:
                 audit.extend(audit_value_column(raw_fecha, config.MATERIAL_COLS["fecha"], "date", path.name))
                 audit.extend(audit_value_column(raw_valor, config.MATERIAL_COLS["valor"], "number", path.name))
-            out["fecha"] = pd.to_datetime(raw_fecha, errors="coerce")
+            # dayfirst=True: fecha como TEXTO europeo "dd.mm.yyyy" (ver read_exportacion).
+            out["fecha"] = pd.to_datetime(raw_fecha, errors="coerce", dayfirst=True)
             out["valor"] = pd.to_numeric(raw_valor, errors="coerce")
         except KeyError:
             # Esta hoja no tiene las columnas de material; probar la siguiente.

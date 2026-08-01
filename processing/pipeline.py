@@ -875,7 +875,10 @@ def _run_ocupacion_pipeline(
 
     # 2) ocupacion -> numérico (fnNumero); fecha de almacenamiento; filtra Fecha no nula.
     ocu["ocupacion"] = _fn_numero_series(ocu["ocupacion"])
-    ocu["_fecha"] = pd.to_datetime(ocu["fecha"], errors="coerce").dt.normalize()
+    # dayfirst=True: la fecha puede venir como TEXTO europeo "dd.mm.yyyy" (p. ej.
+    # ocupacion_prof); sin dayfirst, pandas cachea el orden desde la 1ª fila y puede leer
+    # mes-primero -> días fuera de rango -> servicio omitido en silencio.
+    ocu["_fecha"] = pd.to_datetime(ocu["fecha"], errors="coerce", dayfirst=True).dt.normalize()
     ocu = ocu.loc[ocu["_fecha"].notna()].copy()
 
     # 3) Filtro por Fecha en el rango del usuario (inclusivo).
@@ -1449,6 +1452,10 @@ def _run_exportacion_pipeline(
 
     # 2) Filtro por Fecha factura en el rango del usuario (inclusivo, ignora la hora).
     p("Filtrando exportación por fecha…", 97)
+    # Áreas presentes antes del filtro de rango: para avisar si alguna (p. ej. solo
+    # PROFESIONAL) se queda con 0 filas en rango sin que todo el bloque quede vacío.
+    # Antes esto se tragaba en silencio cuando la otra área sí tenía filas en rango.
+    areas_pre = set(expo["area"].map(config.AREA_DEFAULT).dropna().unique())
     fecha = pd.to_datetime(expo["fecha"], errors="coerce").dt.normalize()
     expo = expo.loc[(fecha >= ts_start) & (fecha <= ts_end)].copy()
     if expo.empty:
@@ -1459,6 +1466,18 @@ def _run_exportacion_pipeline(
             }
         )
         return []
+    # Aviso por área: un área tenía filas pero ninguna cae en el rango.
+    areas_post = set(expo["area"].map(config.AREA_DEFAULT).dropna().unique())
+    for area in sorted(areas_pre - areas_post):
+        emit(
+            {
+                "severity": "warning",
+                "msg": (
+                    f"Exportación {area}: 0 filas con 'Fecha factura' en el rango "
+                    f"{start} – {end} (revisa que las fechas del archivo estén dentro del rango)."
+                ),
+            }
+        )
 
     expo["cantidad"] = pd.to_numeric(expo["cantidad"], errors="coerce")
 
