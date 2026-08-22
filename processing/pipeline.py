@@ -294,6 +294,71 @@ def _load_all_salidas(strict: bool = True, audit: list | None = None):
 
 
 # ---------------------------------------------------------------------------
+# Huella faltante: error crítico (no se permite facturar a ciegas)
+# ---------------------------------------------------------------------------
+
+def _audit_huellas_faltantes(df, fuente: str, emit) -> int:
+    """Audita filas cuyo material no tiene huella (pallet o caja vacío tras el
+    merge left) y emite un issue severity=error kind=huella POR MATERIAL Distinto
+    de cada archivo de origen, con el material (idh) y la referencia/delivery para
+    que el usuario lo ubique y lo corrija en huellas.xlsx.
+
+    Devuelve el nº de filas afectadas. NO detiene aquí: cada pipeline acumula sus
+    issues y `run_all` lanza BlockingError al final (mismo patrón que la auditoría
+    de tipos: se listan TODOS los problemas de TODAS las fuentes a la vez).
+    """
+    pallet = pd.to_numeric(df["pallet"], errors="coerce")
+    caja = pd.to_numeric(df["caja"], errors="coerce")
+    sin = df.loc[pallet.isna() | caja.isna()].copy()
+    if sin.empty:
+        return 0
+
+    # Columna de referencia según la fuente: delivery (salidas/exportaciones) o
+    # documento_cruce (ingresos); maquila no trae ninguna -> solo material.
+    ref_col = None
+    if "delivery" in sin.columns and sin["delivery"].notna().any():
+        ref_col = "delivery"
+    elif "documento" in sin.columns and sin["documento"].notna().any():
+        ref_col = "documento"
+
+    n = len(sin)
+    # Un issue por (archivo, material): agrupa el detalle sin ahogar el panel.
+    por_material = sin.groupby("archivo", dropna=False)
+    for archivo, grupo in por_material:
+        materiales = sorted(
+            str(m).strip() for m in grupo["material"].dropna().unique() if str(m).strip()
+        )
+        ejemplos = []
+        for m in materiales[:5]:
+            if ref_col:
+                refs = (
+                    grupo.loc[grupo["material"].astype(str).str.strip() == m, ref_col]
+                    .dropna()
+                    .astype(str)
+                    .unique()[:3]
+                )
+                ref_txt = f", ref {', '.join(refs)}" if len(refs) else ""
+            else:
+                ref_txt = ""
+            ejemplos.append(f"material {m}{ref_txt}")
+        mas = f" (+{len(materiales) - 5} más)" if len(materiales) > 5 else ""
+        emit(
+            {
+                "severity": "error",
+                "kind": "huella",
+                "file": archivo,
+                "msg": (
+                    f"{fuente} · {archivo}: {len(grupo):,} fila(s) con material SIN huella en "
+                    f"huellas.xlsx → {len(materiales)} material(es): {'; '.join(ejemplos)}{mas}. "
+                    "Agrega el producto en HUELLAS/huellas.xlsx (pallet y caja) o corrige el "
+                    "material y vuelve a generar."
+                ).replace(",", "."),
+            }
+        )
+    return n
+
+
+# ---------------------------------------------------------------------------
 # Pipeline SALIDAS (Paso 1) — cuerpo puro, sin cachear ni finalizar
 # ---------------------------------------------------------------------------
 
@@ -402,17 +467,28 @@ def _run_salidas_pipeline(
         )
         huellas_matched = int(salidas["pallet"].notna().sum())
         huellas_missing = rows_in_range - huellas_matched
+        _audit_huellas_faltantes(salidas, "SALIDAS", emit)
     except FileNotFoundError:
         emit(
             {
-                "severity": "warning",
-                "msg": "No se encontró huellas.xlsx. Estibas y cajas quedarán vacías.",
+                "severity": "error",
+                "kind": "huella",
+                "msg": (
+                    "No se encontró HUELLAS/huellas.xlsx: sin huellas no se pueden calcular "
+                    "estibas/cajas de SALIDAS. Agrégalo y vuelve a generar."
+                ),
             }
         )
         salidas["pallet"] = pd.NA
         salidas["caja"] = pd.NA
     except Exception as exc:
-        emit({"severity": "warning", "msg": f"Error leyendo huellas: {exc}"})
+        emit(
+            {
+                "severity": "error",
+                "kind": "huella",
+                "msg": f"Error leyendo huellas.xlsx: {exc}. Corrige el archivo y vuelve a generar.",
+            }
+        )
         salidas["pallet"] = pd.NA
         salidas["caja"] = pd.NA
 
@@ -484,16 +560,6 @@ def _run_salidas_pipeline(
     )
 
     # 8) Issues derivados de la calidad de los datos (no detienen).
-    if huellas_missing > 0:
-        emit(
-            {
-                "severity": "warning",
-                "msg": (
-                    f"{huellas_missing:,} registros sin huella (material no encontrado en huellas.xlsx): "
-                    "sus estibas/cajas quedaron vacías."
-                ).replace(",", "."),
-            }
-        )
     if idh_dup > 0:
         emit(
             {
@@ -687,17 +753,28 @@ def _run_ingresos_pipeline(
     try:
         huellas, _ = io_utils.read_huellas()
         ing = ing.merge(huellas.rename(columns={"producto": "material"}), on="material", how="left")
+        _audit_huellas_faltantes(ing, "INGRESOS", emit)
     except FileNotFoundError:
         emit(
             {
-                "severity": "warning",
-                "msg": "No se encontró huellas.xlsx. Los servicios de ingresos quedarán vacíos.",
+                "severity": "error",
+                "kind": "huella",
+                "msg": (
+                    "No se encontró HUELLAS/huellas.xlsx: sin huellas no se pueden calcular "
+                    "los servicios de INGRESOS. Agrégalo y vuelve a generar."
+                ),
             }
         )
         ing["pallet"] = pd.NA
         ing["caja"] = pd.NA
     except Exception as exc:
-        emit({"severity": "warning", "msg": f"Error leyendo huellas para ingresos: {exc}"})
+        emit(
+            {
+                "severity": "error",
+                "kind": "huella",
+                "msg": f"Error leyendo huellas.xlsx para ingresos: {exc}. Corrige el archivo y vuelve a generar.",
+            }
+        )
         ing["pallet"] = pd.NA
         ing["caja"] = pd.NA
 
@@ -1232,17 +1309,28 @@ def _run_maquila_pipeline(
     try:
         huellas, _ = io_utils.read_huellas()
         mq = mq.merge(huellas.rename(columns={"producto": "material"}), on="material", how="left")
+        _audit_huellas_faltantes(mq, "MAQUILA", emit)
     except FileNotFoundError:
         emit(
             {
-                "severity": "warning",
-                "msg": "No se encontró huellas.xlsx. Los servicios de maquila quedarán vacíos.",
+                "severity": "error",
+                "kind": "huella",
+                "msg": (
+                    "No se encontró HUELLAS/huellas.xlsx: sin huellas no se pueden calcular "
+                    "los servicios de MAQUILA. Agrégalo y vuelve a generar."
+                ),
             }
         )
         mq["pallet"] = pd.NA
         mq["caja"] = pd.NA
     except Exception as exc:
-        emit({"severity": "warning", "msg": f"Error leyendo huellas para maquila: {exc}"})
+        emit(
+            {
+                "severity": "error",
+                "kind": "huella",
+                "msg": f"Error leyendo huellas.xlsx para maquila: {exc}. Corrige el archivo y vuelve a generar.",
+            }
+        )
         mq["pallet"] = pd.NA
         mq["caja"] = pd.NA
 
@@ -1397,8 +1485,8 @@ def _run_exportacion_pipeline(
        es vestigial — nunca se expande — y luego duplica negocio -> nf; sin idh).
     4. Cruza huellas (pallet/caja); NO hay cruce idh.
     5. Medidas (vectorizado): `pallets = ceil(cant/pallet)`, `cajas = ceil(cant/caja)`,
-       `unidades = caja * cajas` (redondea hacia ARRIBA a múltiplo de caja; **no** es
-       `cantidad` — es la unidades "facturadas" del grupo).
+       `unidades = cantidad` (Ctd Ent.(UMV) cruda — decisión del usuario; el PQ original
+       usaba caja*cajas, redondeo a múltiplo de caja, que sobrecontaba).
     6. Agrupa por (negocio, canal) y emite 3 servicios (unpivot de logica.txt):
        - PALLETS EXPO <canal>: valor = sum(pallets),  unidades = sum(unidades).
        - CAJAS EXPO <canal>:   valor = sum(cajas),    unidades = sum(unidades).
@@ -1489,31 +1577,40 @@ def _run_exportacion_pipeline(
     try:
         huellas, _ = io_utils.read_huellas()
         expo = expo.merge(huellas.rename(columns={"producto": "material"}), on="material", how="left")
+        _audit_huellas_faltantes(expo, "EXPORTACIONES", emit)
     except FileNotFoundError:
         emit(
             {
-                "severity": "warning",
-                "msg": "No se encontró huellas.xlsx. Los servicios de exportación quedarán vacíos.",
+                "severity": "error",
+                "kind": "huella",
+                "msg": (
+                    "No se encontró HUELLAS/huellas.xlsx: sin huellas no se pueden calcular "
+                    "los servicios de EXPORTACIONES. Agrégalo y vuelve a generar."
+                ),
             }
         )
         expo["pallet"] = pd.NA
         expo["caja"] = pd.NA
     except Exception as exc:
-        emit({"severity": "warning", "msg": f"Error leyendo huellas para exportación: {exc}"})
+        emit(
+            {
+                "severity": "error",
+                "kind": "huella",
+                "msg": f"Error leyendo huellas.xlsx para exportación: {exc}. Corrige el archivo y vuelve a generar.",
+            }
+        )
         expo["pallet"] = pd.NA
         expo["caja"] = pd.NA
 
     # 5) Medidas: pallets=ceil(cant/pallet), cajas=ceil(cant/caja),
-    #    unidades = caja * cajas (null si caja o cajas null). NO es `cantidad`.
+    #    unidades = cantidad (Ctd Ent.(UMV) cruda — decisión del usuario 2026-08-20;
+    #    antes era caja*cajas, redondeo a múltiplo de caja, que sobrecontaba).
     cantidad = expo["cantidad"]
     pallet = pd.to_numeric(expo["pallet"], errors="coerce")
     caja = pd.to_numeric(expo["caja"], errors="coerce")
     pallets = pd.to_numeric(_ceil_series(cantidad, pallet), errors="coerce")
     cajas = pd.to_numeric(_ceil_series(cantidad, caja), errors="coerce")
-    und = pd.Series([pd.NA] * len(expo), index=expo.index, dtype=object)
-    und_valid = caja.notna() & cajas.notna()
-    und.loc[und_valid] = (caja.loc[und_valid] * cajas.loc[und_valid]).astype("int64")
-    unidades = pd.to_numeric(und, errors="coerce")
+    unidades = pd.to_numeric(cantidad, errors="coerce")
 
     expo["_pallets"] = pallets
     expo["_cajas"] = cajas
@@ -2575,6 +2672,19 @@ def run_all(start: str, end: str, *, progress=None, on_issue=None) -> Step1Resul
             "el panel de errores y corrige los archivos antes de volver a generar."
         )
 
+    # Huellas faltantes: crítico. Facturar estibas/cajas con materiales sin huella
+    # subvalora la factura (las filas aportan 0 a pallets/cajas), así que se DETIENE
+    # igual que la auditoría de tipos. Los issues (kind="huella") ya se emitieron en
+    # vivo con archivo de origen + material + referencia para poder corregir.
+    huella_errors = [i for i in issues if i.get("kind") == "huella" and i.get("severity") == "error"]
+    if huella_errors:
+        raise BlockingError(
+            f"Se encontraron {len(huella_errors)} problema(s) de huellas faltantes "
+            "(materiales sin huella en HUELLAS/huellas.xlsx, o el archivo no se pudo "
+            "leer). Revísalos en el panel de errores, agrega las huellas que faltan "
+            "y vuelve a generar."
+        )
+
     servicios = servicios + otros_services
     combined = dict(totals)
     combined["servicios"] = servicios
@@ -2906,7 +3016,9 @@ def validate_sources() -> dict:
     # 2) Archivos auxiliares fijos (lookup) por ruta directa.
     file_sources = [
         ("Auxiliares", "Tarifas (para los costos)", config.FILES["tarifas"], False, "AUXILIARES/tarifas.xlsx"),
-        ("Auxiliares", "Huellas (pallet/caja)", config.FILES["huellas"], False, "HUELLAS/huellas.xlsx"),
+        # Requerido: sin huellas no se pueden calcular estibas/cajas/pallets de
+        # SALIDAS/INGRESOS/MAQUILA/EXPORTACIONES (error crítico, detiene).
+        ("Auxiliares", "Huellas (pallet/caja)", config.FILES["huellas"], True, "HUELLAS/huellas.xlsx"),
         ("Auxiliares", "IDH especiales (negocio por material)", config.FILES["idh_especiales"], False, "AUXILIARES/idh_especiales.xlsx"),
         ("Auxiliares", "Tipo de despacho (CEDI)", config.FILES["tipo_despacho"], False, "AUXILIARES/tipo_despacho.xlsx"),
         ("Auxiliares", "Equivalencias de ocupación", config.FILES["equivalencias"], False, "AUXILIARES/equivalencias_almacenamiento.xlsx"),
@@ -2968,13 +3080,17 @@ if __name__ == "__main__":
         pass
 
     emitted: list[dict] = []
+    # Rango por defecto: se puede pasar por CLI (python -m processing.pipeline dd/mm/aaaa dd/mm/aaaa).
+    import sys as _sys
+    _start = _sys.argv[1] if len(_sys.argv) > 2 else "20/05/2026"
+    _end = _sys.argv[2] if len(_sys.argv) > 2 else "19/06/2026"
     try:
-        res = run_all("20/05/2026", "19/06/2026", on_issue=emitted.append)
+        res = run_all(_start, _end, on_issue=emitted.append)
     except BlockingError as exc:
         print("PROCESO DETENIDO (error grave de archivo):", exc)
-        audit = [i for i in emitted if i.get("kind") == "audit"]
+        audit = [i for i in emitted if i.get("kind") in ("audit", "huella")]
         if audit:
-            print("\nDetalles de auditoría de tipos (fechas/números inválidos):")
+            print("\nDetalles (fechas/números inválidos o huellas faltantes):")
             for i in audit:
                 print(f"  - {i.get('file', '?')}: {i.get('msg')}")
         raise SystemExit(1)

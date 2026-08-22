@@ -161,8 +161,9 @@ se omite y se continúa.
 
 Errores de archivo (no se puede leer un `ingresos*`, falta columna obligatoria) **detienen**
 el proceso. **Sin archivos `ingresos*`** → advertencia y el Paso 3 se omite (no detiene);
-SALIDAS y DESTRUCCIÓN siguen saliendo. Sin `huellas.xlsx`, los servicios de ingresos quedan
-vacíos (advertencia).
+SALIDAS y DESTRUCCIÓN siguen saliendo. Sin `huellas.xlsx` o con materiales sin huella →
+**error crítico (detiene)**, con archivo de origen + material en el panel (ver
+*Detección de errores*).
 
 ---
 
@@ -371,8 +372,9 @@ carpeta **`MAQUILA/`** (ojo: ambos ficheros viven en esa carpeta, no en `CONSUME
 > Validación (verificada): `python -m processing.pipeline` da **46 líneas** en la hoja Servicios
 > (las 41 de SALIDAS/DESTRUCCION/INGRESOS/OCUPACION/TRASLADOS + 5 de MAQUILA) **sin alterar**
 > los pasos previos, y los 5 valores coinciden con la "Salida esperada". Sin `maquila*` →
-> advertencia y se omite (no detiene). Sin `huellas`/`idh` → MAQUILA con valores vacíos
-> (advertencia). Archivo obligatorio roto (sin `Posting Date`/`Material`/`Cantidad`) → `BlockingError`.
+> advertencia y se omite (no detiene). Sin `huellas` o material sin huella → **error
+> crítico (detiene)**. Sin `idh` → MAQUILA queda por área (advertencia). Archivo
+> obligatorio roto (sin `Posting Date`/`Material`/`Cantidad`) → `BlockingError`.
 
 ---
 
@@ -419,9 +421,10 @@ carpeta **`EXPORTACIONES/`** (ambos ficheros viven ahí, como `MAQUILA/`; no en
 6. Medidas (sobre `Ctd Ent.(UMV)` + `unidades_pallet`/`unidades_caja`):
    - `pallets = ceil(cantidad / unidades_pallet)` (RoundUp, como estibas).
    - `cajas   = ceil(cantidad / unidades_caja)` (RoundUp).
-   - `unidades = unidades_caja × cajas` — **redondea hacia ARRIBA a múltiplo de caja**
-     (`caja × ceil(cant/caja)`); **NO es `cantidad`** (son las unidades "facturadas").
-   - (nulo donde falte el divisor o sea 0).
+   - `unidades = cantidad` — la **`Ctd Ent.(UMV)` cruda** (decisión del usuario 2026-08-20;
+     el PQ original usaba `unidades_caja × cajas` —redondeo hacia arriba a múltiplo de caja—
+     lo que sobrecontaba).
+   - (nulo donde falte el divisor o sea 0; `unidades` no depende de huellas).
 7. **Agrupa** por `(negocio, canal)` sumando `pallets`, `cajas` y `unidades` (la `fecha`
    del nombre del PQ se descarta: el bot usa `periodo` como el resto). Luego emite los
    servicios (unpivot + `servicio = base & " " & canal` de `logica.txt`):
@@ -466,10 +469,13 @@ carpeta **`EXPORTACIONES/`** (ambos ficheros viven ahí, como `MAQUILA/`; no en
 > Servicios (las 46 de SALIDAS/DESTRUCCION/INGRESOS/OCUPACION/TRASLADOS/MAQUILA + 9 de
 > EXPORTACIONES) **sin alterar** los pasos previos, y los 9 valores coinciden con la
 > "Salida esperada". Coherencia OK: `unidades` es compartida por los 3 servicios de cada
-> grupo y, para `UND EXPO`, `valor == unidades` (fiel al `DuplicateUND` del PQ). Sin
-> `exportacion*` → advertencia y se omite (no detiene). Sin `huellas` → medidas vacías
-> (advertencia). Archivo obligatorio roto (sin `Delivery`/`Fecha factura`/`Material`/
-> `Ctd Ent.(UMV)`/`Canal distribución`) → `BlockingError`.
+> grupo y, para `UND EXPO`, `valor == unidades` (fiel al `DuplicateUND` del PQ).
+> *(Revalidado 2026-08-20 tras el cambio de `unidades` a `Ctd Ent.(UMV)` cruda, con la
+> data de julio 2025: CONSUMER/IC cajas 49.730 / und 633.379; PROFESIONAL/IC cajas
+> 53.145 / und 3.071.959; `valor == unidades` en UND se mantiene.)* Sin
+> `exportacion*` → advertencia y se omite (no detiene). Sin `huellas` o material sin
+> huella → **error crítico (detiene)**. Archivo obligatorio roto (sin `Delivery`/`Fecha
+> factura`/`Material`/`Ctd Ent.(UMV)`/`Canal distribución`) → `BlockingError`.
 
 ---
 
@@ -1072,8 +1078,8 @@ El procesamiento distingue dos tipos de problemas:
   columna requerida, o **datos inválidos en celdas clave** — ver *Auditoría de tipos* más
   abajo) **detienen el proceso** y avisan al usuario para que corrija y vuelva a generar.
   La barra de avance se congela en la etapa donde ocurrió.
-- **Advertencias** (lookups opcionales ausentes como `huellas`/`idh`/`adicionales`/
-  `tipo_despacho`, duplicados, registros sin huella, archivos `destruccion*` vacíos)
+- **Advertencias** (lookups opcionales ausentes como `idh`/`adicionales`/
+  `tipo_despacho`, duplicados, archivos `destruccion*` vacíos)
   **se reportan pero no detienen**.
 
 `/api/progress` incluye `issues` con `severity` (`error` / `warning`):
@@ -1084,8 +1090,14 @@ El procesamiento distingue dos tipos de problemas:
 - No hay archivos `ingresos_cons*`/`ingresos_prof*` (Paso 3 omitido) o 0 filas con
   `Posting Date` en el rango.
 - Falta `idh_especiales.xlsx` (todo queda por defecto).
-- Falta `huellas.xlsx` (estibas/cajas vacías).
-- Materiales sin huella (sus estibas/cajas quedan vacías).
+- **Huellas faltantes — CRÍTICO (detiene)**: cualquier material de SALIDAS/INGRESOS/
+  MAQUILA/EXPORTACIONES que no exista en `huellas.xlsx` (o con pallet/caja vacíos)
+  **detiene la facturación**. El issue lista, **por archivo de origen**, el conteo de
+  filas, los **materiales** (idh) afectados (hasta 5, con `+N más`) y, donde la fuente
+  trae referencia, el **delivery/documento** de ejemplo (hasta 3), para ubicar y
+  corregir en `HUELLAS/huellas.xlsx`. También es crítico que `huellas.xlsx` no exista
+  o no se pueda leer. (Antes era warning silencioso en INGRESOS/MAQUILA/EXPORTACIONES
+  y las filas sin huella aportaban 0 a pallets/cajas — subvaloraba la factura.)
 - Materiales duplicados en `idh_especiales`.
 - Falta `adicionales*` (todo queda `tipo_trabajo = NORMAL`).
 - Falta `tipo_despacho.xlsx` (todo queda `tipo_despacho = ESTANDAR`).
@@ -1093,6 +1105,27 @@ El procesamiento distingue dos tipos de problemas:
 - **Auditoría de tipos** (fecha invertida como `02/21/2026`, texto en columna numérica
   como `s`, o fechas inválidas/no parseables): **detiene el proceso** con detalle
   `archivo · columna · ejemplo` (ver abajo).
+
+### Auditoría de huellas faltantes (crítica)
+
+Cada pipeline que cruza huellas (SALIDAS, INGRESOS, MAQUILA, EXPORTACIONES) verifica,
+tras el `merge`, si alguna fila quedó con `pallet`/`caja` vacíos (material sin huella o
+con huella inválida). Si hay alguna:
+
+- Emite issues `severity=error, kind="huella"` **por archivo de origen** con: paso
+  (SALIDAS/INGRESOS/…), **nombre del archivo**, nº de filas afectadas, **materiales**
+  (hasta 5, con `+N más`) y **referencias** (delivery en SALIDAS/EXPORTACIONES,
+  documento en INGRESOS; MAQUILA no trae referencia) para ubicar el registro exacto.
+- **No calcula con esas filas**: igual que la auditoría de tipos, acumula TODOS los
+  problemas de TODAS las fuentes y `run_all` lanza `BlockingError` **antes de generar
+  el Excel** — la UI muestra el panel rojo ⛔ y no hay Descargar hasta corregir
+  `HUELLAS/huellas.xlsx` (o el material mal digitado en la fuente) y volver a Generar.
+- `huellas.xlsx` ausente o ilegible también es crítico (antes era warning y las medidas
+  quedaban vacías).
+- El checklist (`GET /api/validate`) marca Huellas como **requerido (⛔)**.
+
+Razón: una fila sin huella aportaba 0 a estibas/cajas/pallets y sólo sumaba a
+unidades — la factura salía **subvalorada en silencio**.
 
 ### Auditoría de tipos de datos (fechas y números)
 

@@ -377,6 +377,7 @@ def read_salidas(path: Path, area: str, audit: list | None = None) -> pd.DataFra
         out["cantidad"] = pd.to_numeric(raw_cantidad, errors="coerce")
         out["fecha"] = pd.to_datetime(raw_fecha, errors="coerce")
         out["area"] = area
+        out["archivo"] = path.name
         return out
     raise KeyError(
         f"El archivo {path.name} no tiene una hoja legible con las columnas esperadas. {last_err or ''}"
@@ -403,6 +404,7 @@ def _select_salidas(df: pd.DataFrame, area: str, audit: list | None = None, file
     out["cantidad"] = pd.to_numeric(df.iloc[:, 4], errors="coerce")
     out["fecha"] = pd.to_datetime(df.iloc[:, 5], errors="coerce")
     out["area"] = area
+    out["archivo"] = file
     if audit is not None and file is not None:
         # Auditar las columnas crudas (índice 4=cantidad, 5=fecha) antes del coerce.
         audit.extend(audit_value_column(df.iloc[:, 4], config.SALIDAS_COLS["cantidad"], "number", file))
@@ -472,6 +474,7 @@ def read_ingresos(path: Path, area: str, audit: list | None = None) -> pd.DataFr
             continue
         out["material"] = out["material"].astype(str).str.strip().str.upper()
         out["area"] = area
+        out["archivo"] = path.name
         return out
     raise KeyError(
         f"El archivo {path.name} no tiene una hoja legible con las columnas esperadas "
@@ -671,6 +674,7 @@ def read_maquila(path: Path, area: str, audit: list | None = None) -> pd.DataFra
             continue
         out["material"] = out["material"].astype(str).str.strip().str.upper()
         out["area"] = area
+        out["archivo"] = path.name
         return out
     raise KeyError(
         f"El archivo {path.name} no tiene una hoja legible con las columnas esperadas "
@@ -749,6 +753,7 @@ def read_exportacion(path: Path, area: str, audit: list | None = None) -> pd.Dat
         out["material"] = out["material"].astype(str).str.strip().str.upper()
         out["canal"] = out["canal"].astype(str).str.strip().str.upper()
         out["area"] = area
+        out["archivo"] = path.name
         return out
     raise KeyError(
         f"El archivo {path.name} no tiene una hoja legible con las columnas esperadas "
