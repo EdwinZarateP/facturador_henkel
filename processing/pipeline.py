@@ -2486,7 +2486,7 @@ def _apply_tarifas(servicios: list[dict], emit) -> list[dict]:
     """Cruza cada línea agregada con `tarifas.xlsx` (llave `servicio`) y calcula el costo.
 
     - Lee `tarifas` (hoja activa, una tarifa por `servicio`); la **fecha no importa**
-      (decisión del usuario): se arma un lookup plano `servicio normalizado -> {um, tarifa}`.
+      (decisión del usuario): se arma un lookup plano `servicio normalizado -> {um, tarifa, minima}`.
       Si hubiera varias filas para el mismo `servicio` con `valor` distinto, gana la última
       y se avisa (en la hoja activa actual no ocurre: 1 fila por servicio).
     - Para cada línea con match: añade `um`, `tarifa` (= tarifas.valor) y `costo_total` =
@@ -2517,6 +2517,7 @@ def _apply_tarifas(servicios: list[dict], emit) -> list[dict]:
             s.setdefault("um", "")
             s.setdefault("tarifa", None)
             s.setdefault("costo_total", None)
+            s.setdefault("minima", "")
         return servicios
 
     lookup: dict[str, dict] = {}
@@ -2530,10 +2531,12 @@ def _apply_tarifas(servicios: list[dict], emit) -> list[dict]:
         tarifa = None if pd.isna(tarifa) else float(tarifa)
         um = rec.get("um")
         um = "" if pd.isna(um) else str(um).strip()
+        minima = rec.get("minima")
+        minima = "" if pd.isna(minima) else str(minima).strip()
         prev = lookup.get(key)
         if prev is not None and prev["tarifa"] is not None and tarifa is not None and prev["tarifa"] != tarifa:
             conflicts.append(str(serv))
-        lookup[key] = {"um": um, "tarifa": tarifa}
+        lookup[key] = {"um": um, "tarifa": tarifa, "minima": minima}
     if conflicts:
         emit(
             {
@@ -2564,9 +2567,101 @@ def _apply_tarifas(servicios: list[dict], emit) -> list[dict]:
         s2["um"] = tar["um"]
         s2["tarifa"] = tar["tarifa"]
         s2["costo_total"] = costo
+        s2["minima"] = tar["minima"]
         enriquecidas.append(s2)
 
     return enriquecidas
+
+
+def _macro_minima(value) -> str:
+    """Normaliza el macroproceso usado para mínimos y corrige el typo del tarifario."""
+    macro = str(value).strip().upper() if pd.notna(value) else ""
+    return "ALMACENAMIENTO" if macro == "ALMCENAMIENTO" else macro
+
+
+def _apply_ajustes_minima(
+    servicios_facturados: list[dict], periodo: str, emit
+) -> list[dict]:
+    """Completa la facturación mínima por macroproceso con un reparto fijo 80/20."""
+    try:
+        tarifas = io_utils.read_tarifas()
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        emit(
+            {
+                "severity": "warning",
+                "msg": f"No se pudieron calcular mínimos de facturación ({exc}).",
+            }
+        )
+        return []
+
+    aplica = tarifas["minima"].map(io_utils.normalize).eq(
+        io_utils.normalize("Aplica minima")
+    )
+    elegibles = tarifas.loc[aplica].copy()
+    if elegibles.empty:
+        return []
+
+    elegibles["_macro_minima"] = elegibles["macro_proceso"].map(_macro_minima)
+    elegibles = elegibles.loc[
+        elegibles["_macro_minima"].ne("")
+        & elegibles["_macro_minima"].ne("OTROS")
+    ].copy()
+    elegibles["_servicio_key"] = elegibles["servicio"].map(io_utils.normalize)
+
+    # El tarifario vigente tiene una fila por servicio. Si aparecieran duplicados,
+    # conservar la última coincide con la regla usada por _apply_tarifas.
+    servicio_macro = (
+        elegibles.drop_duplicates("_servicio_key", keep="last")
+        .set_index("_servicio_key")["_macro_minima"]
+        .to_dict()
+    )
+    minimos = (
+        elegibles.groupby("_macro_minima", dropna=False)["minima_valor_subproceso"]
+        .sum()
+        .to_dict()
+    )
+
+    facturado: dict[str, float] = {macro: 0.0 for macro in minimos}
+    for servicio in servicios_facturados:
+        key = io_utils.normalize(servicio.get("servicio", ""))
+        macro = servicio_macro.get(key)
+        if macro is None:
+            continue
+        costo = pd.to_numeric(servicio.get("costo_total"), errors="coerce")
+        if pd.notna(costo):
+            facturado[macro] = facturado.get(macro, 0.0) + float(costo)
+
+    ajustes: list[dict] = []
+    for macro in sorted(minimos):
+        minimo = round(float(minimos[macro]), 4)
+        real = round(float(facturado.get(macro, 0.0)), 4)
+        diferencia = round(minimo - real, 4)
+        if diferencia <= 0:
+            continue
+
+        consumer = round(diferencia * 0.80, 4)
+        profesional = round(diferencia - consumer, 4)
+        for negocio, valor in (("CONSUMER", consumer), ("PROFESIONAL", profesional)):
+            if valor == 0:
+                continue
+            ajustes.append(
+                {
+                    "periodo": periodo,
+                    "negocio": negocio,
+                    "negocio_facturador": negocio,
+                    "servicio": "AJUSTE",
+                    "valor": 1,
+                    "unidades": 0,
+                    "um": "COP",
+                    "tarifa": valor,
+                    "costo_total": valor,
+                    "proceso_extendido": "AJUSTE MINIMA",
+                    "macro_proceso": macro,
+                    "proceso_abreviado": "AJU",
+                    "tabla": "AJUSTE",
+                }
+            )
+    return ajustes
 
 
 def run_all(start: str, end: str, *, progress=None, on_issue=None) -> Step1Result:
@@ -2685,7 +2780,10 @@ def run_all(start: str, end: str, *, progress=None, on_issue=None) -> Step1Resul
             "y vuelve a generar."
         )
 
-    servicios = servicios + otros_services
+    # El mínimo se calcula sólo sobre las líneas tarifadas normales (OTROS no participa)
+    # y sus ajustes se anexan de últimos, después de los servicios pre-armados de OTROS.
+    ajustes_minima = _apply_ajustes_minima(servicios, periodo, emit)
+    servicios = servicios + otros_services + ajustes_minima
     combined = dict(totals)
     combined["servicios"] = servicios
 

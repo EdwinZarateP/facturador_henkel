@@ -952,14 +952,30 @@ línea agregada con `tarifas.xlsx` y calcula el costo:
     **silenciosamente** (no se reportan: no impiden facturar; el panel de avisos es solo
     para errores que impidan facturar);
   - las líneas con **`valor = 0`**.
-- **Sin mínimo facturable**: sólo `valor × tarifa` (las columnas `minima`/`minima_valor_subproceso`
-  de `tarifas.xlsx` se ignoran por ahora).
+- **Mínimo facturable por macroproceso**: los servicios cuyo campo `minima` sea
+  `Aplica minima` se agrupan por el `macro_proceso` definido en `tarifas.xlsx`. Para cada
+  macroproceso salvo `OTROS`, se compara su `costo_total` facturado con la suma de
+  `minima_valor_subproceso`. Si queda por debajo, la diferencia se anexa al final en dos
+  líneas `AJUSTE`: **80 % CONSUMER** y **20 % PROFESIONAL**. Si alcanza o supera la mínima,
+  no se agrega nada. El ajuste usa `valor = 1`, `tarifa = costo_total = diferencia asignada`,
+  `um = COP`, `tabla = AJUSTE` y conserva el macroproceso que originó el mínimo.
 - **Degradación elegante**: si falta `tarifas.xlsx`, se emite un aviso y se conservan todas las
   líneas (sin columnas de costo, sin filtrar) — un auxiliar ausente no vacía el Excel.
 
 **Columnas del Excel** (`excel_export.SERVICIO_COLUMNS`):
 `periodo, negocio, negocio_facturador, servicio, valor, unidades, um, tarifa, costo_total,
-proceso_extendido, macro_proceso, proceso_abreviado, tabla`.
+proceso_extendido, macro_proceso, proceso_abreviado, tabla, minima`. La columna informativa
+`minima` conserva el valor de `tarifas.xlsx` para identificar los servicios con `Aplica minima`.
+
+El archivo tiene además una hoja **Resumen** con tres cuadros, en este orden:
+
+1. **Por negocio**: servicios sujetos a mínima en `ALMACENAMIENTO`, ajustes separados y
+   el resto de la factura en `OTROS CONCEPTOS`; sus columnas cuadran con el total final.
+2. **Por macroproceso** (excepto OTROS): cantidad y costo de los servicios `Aplica minima`,
+   mínima configurada y ajuste generado. Los totales facturados no incluyen el ajuste.
+3. **Por negocio facturador**: costo total final, presentando CONSUMER como CONSUMER,
+   PROFESIONAL como PROFESSIONAL, consolidando LAUNDRY dentro de CONSUMER y mostrando
+   los ajustes en una categoría AJUSTE independiente.
 
 > **Brecha de cobertura de tarifas (data, no código):** en el baseline, de los 64 servicios
 > calculados **47 encuentran tarifa** y **17 (9 servicios únicos) se eliminan** por no existir en
@@ -1227,7 +1243,8 @@ El usuario construye **paso a paso**:
    **✓ HECHO.** `_apply_tarifas` cruza cada línea agregada por `servicio` con la hoja activa de
    `tarifas.xlsx` (la **fecha no importa**: lookup plano, una tarifa por servicio), añade `um`,
    `tarifa` y `costo_total = valor × tarifa` (redondeo a 4 decimales), y **elimina** del Excel
-   las líneas sin tarifa y las de `valor = 0`. Sin mínimo facturable (sólo valor×tarifa). Ver
+   las líneas sin tarifa y las de `valor = 0`. Después, `_apply_ajustes_minima` completa
+   las mínimas por macroproceso con ajustes 80 % CONSUMER / 20 % PROFESIONAL. Ver la
    sección "Tarifa → costo (dinero)".
 2. ~~**`tipo_trabajo`** desde `ADICIONALES` (entrega → NORMAL / EXTRA E.S).~~ **✓ HECHO.**
 3. ~~**`tipo_despacho`** desde `TIPO_DESPACHO` (CEDI → ESTANDAR / CROSS DOCKING).~~ **✓ HECHO.**

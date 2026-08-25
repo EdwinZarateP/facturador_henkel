@@ -1341,7 +1341,7 @@ def read_huellas() -> tuple[pd.DataFrame, int]:
 
 
 def read_tarifas() -> pd.DataFrame:
-    """Lee tarifas -> [servicio, valor, um, fecha] como tabla de referencia."""
+    """Lee tarifas, incluyendo la configuración de mínimos por macroproceso."""
     path = config.FILES["tarifas"]
     df = pd.read_excel(path, engine=excel_engine())
     cols = list(df.columns)
@@ -1353,6 +1353,11 @@ def read_tarifas() -> pd.DataFrame:
         out["fecha"] = pd.to_datetime(df[find_column(cols, config.TARIFAS_COLS["fecha"])], errors="coerce")
     except KeyError:
         out["fecha"] = pd.NaT
+    out["macro_proceso"] = df[find_column(cols, config.TARIFAS_COLS["macro_proceso"])]
+    out["minima"] = df[find_column(cols, config.TARIFAS_COLS["minima"])]
+    out["minima_valor_subproceso"] = pd.to_numeric(
+        df[find_column(cols, config.TARIFAS_COLS["minima_valor_subproceso"])], errors="coerce"
+    ).fillna(0)
     return out
 
 

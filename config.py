@@ -430,6 +430,9 @@ TARIFAS_COLS = {
     "valor": "valor",
     "um": "UM",
     "fecha": "fecha",
+    "macro_proceso": "macro_proceso",
+    "minima": "minima",
+    "minima_valor_subproceso": "minima_valor_subproceso",
 }
 
 # Formato de fecha que usa el usuario en el calendario (dd/mm/yyyy).
