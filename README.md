@@ -16,7 +16,7 @@ grave el proceso se **detiene** y lo indica para que lo corrijas) y luego
 >   de fecha del usuario sobre `Posting Date` y rama `MATERIAL DE EMPAQUE` vía `idh_especiales`;
 >   **Paso 4 (Ocupación)** que suma líneas `ALMACENAMIENTO …` a la misma hoja, con join
 >   EQUIVALENCIAS, promedio diario redondeado hacia arriba (ceil) y casos especiales
->   MODULA × 350.3 / PROFESIONAL+BIN → NATTURA;
+>   MODULA × 350.3; PROFESIONAL+BIN permanece en PROFESIONAL;
 >   **Paso 5 (Traslados)** que suma líneas `ALISTAMIENTO Y DESPACHO … CENTRO DE TRASLADOS`
 >   a la misma hoja (suma de `SHU`/`CON` por negocio, sin filtro de fecha);
 >   **Paso 6 (Maquila)** que suma líneas `ALISTAMIENTO DE MAQUILA CAJAS` y
@@ -176,7 +176,7 @@ SALIDAS y DESTRUCCIÓN siguen saliendo. Sin `huellas.xlsx` o con materiales sin 
 Facturación de **almacenamiento**. A diferencia de SALIDAS/INGRESOS, **no usa huellas ni idh**:
 usa la tabla **EQUIVALENCIAS** (`AUXILIARES/equivalencias_almacenamiento.xlsx`, `Tipo` →
 `Conversion liquidacion`) y el valor es un **promedio diario redondeado hacia arriba** (con
-casos especiales MODULA × 350.3 y NATTURA para PROFESIONAL + BIN).
+caso especial MODULA × 350.3; BIN de PROFESIONAL permanece en la familia PROFESIONAL).
 
 **Adaptaciones (mismo patrón que los pasos previos):**
 1. Rango de fechas del **usuario** sobre la columna `Fecha` (no `RANGOS_FECHAS` ni la fecha del
@@ -216,8 +216,8 @@ casos especiales MODULA × 350.3 y NATTURA para PROFESIONAL + BIN).
    - `proceso_extendido` (mapa fijo): `PALLET BODEGA 7/8/8 ME`→`PALLETS`, `MEDIO PALLET`→`MEDIO PALLET`,
      `FLOW RACK`→`FLOW RACK`, `BIN`→`BIN`, `MODULA`→`MODULA`, default→`BIN`.
    - `valor` = `ocupacion`, **excepto** `ALMACENAMIENTO MODULA` = `ceil(ocupacion * 350.3)`.
-   - `negocio_facturador` final: si `nf == "PROFESIONAL"` y `servicio == "ALMACENAMIENTO BIN"` → **"NATTURA"**,
-     si no `nf`.
+   - `negocio_facturador` final = `nf`; en particular, `ALMACENAMIENTO BIN` de
+     PROFESIONAL permanece bajo **PROFESIONAL** (no se reasigna a NATTURA).
    - `unidades = 0`, `macro_proceso = "ALMACENAMIENTO"`, `proceso_abreviado = "WHS"`, `tabla = "OCUPACION"`.
 
 **Dónde tocar al implementar** (molde: Paso 3 / `_run_ingresos_pipeline`):
@@ -237,7 +237,7 @@ casos especiales MODULA × 350.3 y NATTURA para PROFESIONAL + BIN).
 existente; LAUNDRY conservaría `… 8 ME`):
 - CONSUMER / CONSUMER: MEDIO PALLET 110, PALLET BODEGA 7 3.748, PALLET BODEGA 8 187 (= 130 + 57 ME).
 - CONSUMER / LAUNDRY: PALLET BODEGA 8 758.
-- PROFESIONAL / NATTURA: BIN 798.
+- PROFESIONAL / PROFESIONAL: BIN 798.
 - PROFESIONAL / PROFESIONAL: FLOW RACK 141, MEDIO PALLET 336, MODULA 1.051, PALLET BODEGA 7 1.272,
   PALLET BODEGA 8 31 (= 6 + 25 ME).
 
@@ -330,7 +330,9 @@ carpeta **`MAQUILA/`** (ojo: ambos ficheros viven en esa carpeta, no en `CONSUME
 2. Filtra filas con `Material` no nulo (`#"Filas filtradas2"` de `logica.txt`).
 3. **Filtra `Posting Date` por el rango del usuario** (inclusivo).
 4. `negocio` = área; `negocio_facturador` = idh si match (incl. `MATERIAL DE EMPAQUE`), si no área.
-   Si `nf = MATERIAL DE EMPAQUE` → `negocio = MATERIAL DE EMPAQUE`.
+   Si `nf = MATERIAL DE EMPAQUE` → `negocio = MATERIAL DE EMPAQUE`. En MAQUILA, una
+   clasificación `LAUNDRY` del idh se ignora y `negocio_facturador` permanece igual al área;
+   NATTURA, MATERIAL DE EMPAQUE y las demás clasificaciones se conservan.
 5. Cruces huellas (pallet/caja) e idh (negocio).
 6. Calcula las 6 medidas (vectorizado).
 7. **Agrupa** por `(negocio, negocio_facturador)` sumando las medidas; genera los servicios
@@ -1248,7 +1250,7 @@ El usuario construye **paso a paso**:
    Servicios.~~ **✓ HECHO.**
 9. ~~**Ocupación (Paso 4)**: `ocupacion*` → servicios `ALMACENAMIENTO …` por `(negocio,
    negocio_facturador)`, valor = promedio diario redondeado hacia arriba, con join
-   EQUIVALENCIAS y casos especiales MODULA × 350.3 / PROFESIONAL+BIN → NATTURA.~~ **✓ HECHO.**
+   EQUIVALENCIAS y caso especial MODULA × 350.3; PROFESIONAL+BIN permanece en PROFESIONAL.~~ **✓ HECHO.**
    Detalle y salida esperada (10 servicios) en la sección "Paso 4 (Ocupacion) — ✅ HECHO".
 10. ~~**Traslados (Paso 5)**: `traslados*` → servicios `ALISTAMIENTO Y DESPACHO … CENTRO DE
     TRASLADOS` por `negocio` (CAJAS = sum(SHU), UNIDADES = sum(CON)), sin filtro de fecha

@@ -902,8 +902,8 @@ def _run_ocupacion_pipeline(
        (`FiltrarOcupacionValida`).
     7. Promedia por `(negocio, nf, conversion)` -> average de los días -> ceil.
     8. Servicios: `servicio` = "ALMACENAMIENTO "+conversion; `valor` = ocup, salvo MODULA =
-       ceil(ocup * 350.3) (sobre el promedio ya redondeado); `nf` final = NATTURA si
-       (PROFESIONAL + ALMACENAMIENTO BIN). unidades=0, macro_proceso=ALMACENAMIENTO,
+       ceil(ocup * 350.3) (sobre el promedio ya redondeado). ALMACENAMIENTO BIN conserva
+       `nf = PROFESIONAL`. unidades=0, macro_proceso=ALMACENAMIENTO,
        proceso_abreviado=WHS, tabla=OCUPACION. **Excepción:** si conversion = "PALLET
        BODEGA 8 ME" y `nf` es CONSUMER/PROFESIONAL, el servicio pasa a
        "ALMACENAMIENTO PALLET BODEGA 8" (se agrupa/suma con el BODEGA 8 existente);
@@ -1047,14 +1047,10 @@ def _run_ocupacion_pipeline(
         ocup = int(r["ocupacion"])
         # MODULA se valora sobre el promedio YA redondeado: ceil(ocup * 350.3).
         valor = math.ceil(ocup * 350.3) if servicio == "ALMACENAMIENTO MODULA" else ocup
-        if nf == "PROFESIONAL" and servicio == "ALMACENAMIENTO BIN":
-            nf_final = "NATTURA"
-        else:
-            nf_final = nf
         servicios.append(
             {
                 "negocio": neg,
-                "negocio_facturador": nf_final,
+                "negocio_facturador": nf,
                 "servicio": servicio,
                 "valor": valor,
                 "unidades": 0,
@@ -1234,7 +1230,8 @@ def _run_maquila_pipeline(
     2. Filtra por Posting Date en el rango del usuario (inclusivo).
     3. Cruza huellas (pallet/caja) e idh (negocio, incl. MATERIAL DE EMPAQUE).
        negocio_facturador = idh si match, si no área; negocio = MATERIAL DE EMPAQUE si
-       nf es ME (mismo molde que ingresos).
+       nf es ME (mismo molde que ingresos). La clasificación LAUNDRY del idh se ignora
+       en MAQUILA: esas filas conservan como negocio_facturador el área del archivo.
     4. Calcula las 6 medidas (vectorizado, mismos helpers que ingresos).
     5. Agrupa por (negocio, negocio_facturador) y emite los servicios según ME:
        - no-ME -> ALISTAMIENTO DE MAQUILA CAJAS (valor=cajas_generales, unidades=cantidad).
@@ -1349,9 +1346,12 @@ def _run_maquila_pipeline(
         emit({"severity": "warning", "msg": f"Error leyendo idh para maquila: {exc}"})
         mq["negocio"] = pd.NA
 
-    # negocio_facturador = idh si match, si no área. negocio = MATERIAL DE EMPAQUE si nf es ME.
+    # negocio_facturador = idh si match, si no área, excepto LAUNDRY: en MAQUILA no se
+    # separa esa familia y la fila conserva el área del archivo. MATERIAL DE EMPAQUE y
+    # las demás clasificaciones especiales del idh sí se mantienen.
     area_label = mq["area"].map(config.AREA_DEFAULT).fillna("CONSUMER")
     nf = mq["negocio"].fillna(area_label)
+    nf = nf.mask(nf.eq("LAUNDRY"), area_label)
     mq["negocio_facturador"] = nf
     me_mask = nf.eq("MATERIAL DE EMPAQUE")
     mq["negocio"] = area_label.mask(me_mask, "MATERIAL DE EMPAQUE")
