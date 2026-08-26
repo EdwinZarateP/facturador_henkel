@@ -26,7 +26,7 @@ import math
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -359,6 +359,69 @@ def _audit_huellas_faltantes(df, fuente: str, emit) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Festivos de Colombia + verificación de días hábiles sin datos
+# ---------------------------------------------------------------------------
+
+# Festivos de fecha fija (NO se mueven — Ley Emiliani no aplica).
+_HOLIDAYS_FIJOS = ((1, 1), (5, 1), (7, 20), (8, 7), (12, 8))
+
+# Festivos que la Ley Emiliani mueve al lunes siguiente si no caen lunes.
+_HOLIDAYS_EMILIANI = ((1, 6), (3, 19), (6, 29), (8, 15), (10, 12), (11, 1), (11, 11))
+
+
+def _easter_sunday(year: int) -> datetime:
+    """Domingo de Pascua (algoritmo gregoriano anónimo)."""
+    a = year % 19
+    b, c = divmod(year, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return datetime(year, month, day)
+
+
+def _next_monday(d: datetime) -> datetime:
+    """Mueve una fecha al el lunes siguiente (si ya es lunes, se queda)."""
+    return d + timedelta(days=(7 - d.weekday()) % 7)
+
+
+def _colombian_holidays(year: int) -> set:
+    """Festivos de Colombia del año: fijos + Emiliani + Semana Santa (Pascua)."""
+    hols = {datetime(year, m, d) for m, d in _HOLIDAYS_FIJOS}
+    hols |= {_next_monday(datetime(year, m, d)) for m, d in _HOLIDAYS_EMILIANI}
+    pascua = _easter_sunday(year)
+    hols.add(pascua - timedelta(days=3))   # Jueves Santo
+    hols.add(pascua - timedelta(days=2))   # Viernes Santo
+    for offset in (39, 60, 68):            # Ascensión, Corpus Christi, Sagrado Corazón
+        hols.add(_next_monday(pascua + timedelta(days=offset)))
+    return hols
+
+
+def _missing_business_days(ts_start, ts_end, fechas_presentes: set) -> list[str]:
+    """Días hábiles del rango que NO existen en las fechas de la data.
+
+    Día hábil = lunes a sábado (el sábado cuenta); los domingos y los festivos
+    de Colombia se excluyen. Devuelve las fechas faltantes en dd/mm/yyyy.
+    """
+    holidays: set = set()
+    for y in range(ts_start.year, ts_end.year + 1):
+        holidays |= _colombian_holidays(y)
+    faltantes = []
+    d = ts_start.normalize().to_pydatetime()
+    fin = ts_end.normalize().to_pydatetime()
+    while d <= fin:
+        if d.weekday() != 6 and d not in holidays and d.date() not in fechas_presentes:
+            faltantes.append(d.strftime("%d/%m/%Y"))
+        d += timedelta(days=1)
+    return faltantes
+
+
+# ---------------------------------------------------------------------------
 # Pipeline SALIDAS (Paso 1) — cuerpo puro, sin cachear ni finalizar
 # ---------------------------------------------------------------------------
 
@@ -432,6 +495,26 @@ def _run_salidas_pipeline(
             }
         )
         return {}, diagnostics
+
+    # Días hábiles sin datos en el rango, evaluado POR ÁREA (sábado es hábil;
+    # domingo y festivos de Colombia no). Solo avisa en el resumen — NO detiene
+    # el proceso.
+    for area, fechas_area in salidas.groupby("area")["fecha"]:
+        presentes = {
+            ts.date() for ts in pd.to_datetime(fechas_area, errors="coerce").dropna().unique()
+        }
+        faltan = _missing_business_days(ts_start, ts_end, presentes)
+        if faltan:
+            emit(
+                {
+                    "severity": "warning",
+                    "kind": "calendario",
+                    "msg": (
+                        f"Días hábiles sin salidas de {config.AREA_DEFAULT.get(area, area)} "
+                        f"en la data ({len(faltan)}): " + ", ".join(faltan)
+                    ),
+                }
+            )
 
     # 3) material -> negocio via idh (default por área).
     p("Cruzando catálogos (huellas, idh, adicionales, despacho)…", 35)
