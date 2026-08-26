@@ -1,13 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Spec de PyInstaller para el Facturador Henkel (modo ONEDIR: una carpeta con el .exe).
+# Spec de PyInstaller para el Facturador Henkel (modo ONEFILE: un único .exe).
 #
 # Construcción:  pyinstaller FacturadorHenkel.spec --noconfirm
-# Resultado:     dist/FacturadorHenkel/FacturadorHenkel.exe
+# Resultado:     dist/FacturadorHenkel.exe  (un solo archivo, ~50 MB)
 #
-# El cliente recibe la carpeta dist/FacturadorHenkel/ y deja sus Excels en las
-# subcarpetas (CONSUMER/, PROFESIONAL/, ...) AL LADO del .exe (config.BASE_DIR =
-# carpeta del exe cuando está empaquetado). Los archivos estáticos van DENTRO del
-# bundle (servidos desde _MEIPASS).
+# El cliente recibe SOLO el .exe y deja sus Excels en las subcarpetas
+# (CONSUMER/, PROFESIONAL/, ...) AL LADO del .exe (config.BASE_DIR = carpeta del
+# exe cuando está empaquetado). Los archivos estáticos van DENTRO del bundle
+# (servidos desde _MEIPASS).
+#
+# Nota: ONEFILE descomprime el bundle a temp en cada arranque -> la primera
+# apertura tarda 1-2 minutos (pandas/numpy pesan); es normal.
 from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
@@ -50,8 +53,9 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    exclude_binaries=True,
     name="FacturadorHenkel",
     debug=False,
     bootloader_ignore_signals=False,
@@ -60,15 +64,4 @@ exe = EXE(
     console=True,           # ventana visible: el cliente la cierra para detener el servidor
     disable_windowed_traceback=False,
     icon=None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name="FacturadorHenkel",
 )

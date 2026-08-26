@@ -47,7 +47,9 @@ grave el proceso se **detiene** y lo indica para que lo corrijas) y luego
 >   no se calcula nada: se respetan tal cual (con tabla `OTROS` fija), sin filtro de
 >   fecha (se anexan todas las filas); se inyecta **tras** `_apply_tarifas`;
 >   **proceso en segundo plano con barra de avance** y **detención ante errores graves**
->   de archivo (corrupto / mal formato / faltante).
+>   de archivo (corrupto / mal formato / faltante);
+>   **aviso de días hábiles sin salidas por área** (lun–sáb, sin domingos ni festivos
+>   de Colombia — warning, no detiene; ver *Detección de errores*).
 > - **Pendiente:** `RANGOS_FECHAS`. (Tarifa → costo **HECHO**: cada línea se cruza por
 >   `servicio` con `tarifas.xlsx` y se calcula `costo_total = valor × tarifa`; las líneas
 >   sin tarifa o con `valor = 0` no llegan al Excel.)
@@ -66,6 +68,24 @@ grave el proceso se **detiene** y lo indica para que lo corrijas) y luego
 
 Requisitos (ya instalados en este entorno): Python 3.13, `fastapi`, `uvicorn`,
 `pandas`, `openpyxl`, `python-calamine`. Ver `requirements.txt`.
+
+### Ejecutable `.exe` (ONEFILE)
+
+```powershell
+pyinstaller FacturadorHenkel.spec --noconfirm
+# Resultado: dist\FacturadorHenkel.exe  (un único archivo, ~53 MB, con todo dentro)
+```
+
+- Modo **ONEFILE**: un solo `.exe` autocontenido (servidor + UI + pandas/numpy). El
+  spec está configurado así — **no cambiar a ONEDIR** (carpeta con `_internal\`) salvo
+  que se quiera arranque más rápido a cambio de repartir una carpeta.
+- El cliente recibe **solo el `.exe`** y lo pone donde quiera; las carpetas de datos
+  (`CONSUMER/`, `PROFESIONAL/`, `HUELLAS/`, `MAQUILA/`, `EXPORTACIONES/`, `OTROS/`,
+  `AUXILIARES/`) van **al lado del exe** (`config.BASE_DIR` = carpeta del exe), y las
+  facturas salen en `FACTURAS_GENERADAS/` también al lado.
+- **La primera apertura tarda 1–2 minutos** (ONEFILE descomprime el bundle a temp en
+  cada arranque; pandas/numpy pesan). Es normal — no está colgado. Después responde
+  al instante.
 
 ---
 
@@ -1105,6 +1125,17 @@ El procesamiento distingue dos tipos de problemas:
 - No hay archivos `salidas_cons*`/`salidas_prof*`.
 - Un archivo no se pudo leer (corrupto, sin la columna `Material`, hoja rara).
 - 0 filas con `Fecha factura` en el rango.
+- **Días hábiles sin salidas en la data (aviso por área)**: tras filtrar el rango, el Paso 1
+  verifica **por área** (CONSUMER y PROFESIONAL por separado) que cada **día hábil** del
+  rango tenga al menos una fila. Día hábil = **lunes a sábado** (el sábado cuenta); los
+  **domingos y los festivos de Colombia se excluyen** (cálculo propio: fijos + Ley
+  Emiliani + Semana Santa vía Pascua — helpers `_colombian_holidays`/`_missing_business_days`
+  en `pipeline.py`, sin dependencias). Si falta algún día, emite un warning
+  `kind="calendario"` por área con la lista de fechas (`dd/mm/yyyy`) — **no detiene** el
+  proceso, sólo avisa para que el usuario verifique si falta un archivo de salidas. Ej.:
+  `Días hábiles sin salidas de PROFESIONAL en la data (3): 27/07/2026, 31/07/2026, 12/08/2026`.
+  Ojo: al ser por área, detecta huecos que el chequeo combinado escondía (un día donde
+  CONSUMER sí tiene datos pero PROFESIONAL no).
 - No hay archivos `ingresos_cons*`/`ingresos_prof*` (Paso 3 omitido) o 0 filas con
   `Posting Date` en el rango.
 - Falta `idh_especiales.xlsx` (todo queda por defecto).
