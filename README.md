@@ -226,7 +226,10 @@ caso especial MODULA × 350.3; BIN de PROFESIONAL permanece en la familia PROFES
 4. `negocio` = área; `negocio_facturador` = **"LAUNDRY" si `Almacen` contiene "LDRY"**, si no `negocio`.
 5. **Join EQUIVALENCIAS** por `Tipo` (normalizado) → `conversion_liquidacion`.
 6. **Suma por día**: `groupby (fecha_almacenamiento, negocio, nf, conversion)` sum `ocupacion`;
-   descarta los días con suma `0` o nula (`FiltrarOcupacionValida`).
+   sólo descarta los días con suma nula. **Ajuste 2026-09-22:** los días con suma `0` **SÍ
+   cuentan** en el promedio (antes se descartaban, réplica del `FiltrarOcupacionValida` de
+   Power BI; con ocupación BIN CONSUMER de septiembre el promedio 0,65 sobre todos los días
+   subía a 1,18 al excluir los 14 días en 0 y el `ceil` facturaba 2 en vez de 1).
 7. **Promedia por periodo**: `groupby (negocio, nf, conversion)` → **average** de los días, luego **`ceil`**.
 8. **Servicios finales** por grupo:
    - `servicio = "ALMACENAMIENTO " + conversion`.
