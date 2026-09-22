@@ -981,8 +981,8 @@ def _run_ocupacion_pipeline(
        `negocio`.
     5. Join EQUIVALENCIAS por `Tipo` -> `conversion`; descarta filas sin conversión
        (Tipos no facturables / sin servicio convertible).
-    6. Suma por día `(fecha, negocio, nf, conversion)`; descarta días con suma 0/nula
-       (`FiltrarOcupacionValida`).
+    6. Suma por día `(fecha, negocio, nf, conversion)`; los días con suma 0 SÍ entran
+       al promedio (ajuste 2026-09); sólo se descartan los días con suma nula.
     7. Promedia por `(negocio, nf, conversion)` -> average de los días -> ceil.
     8. Servicios: `servicio` = "ALMACENAMIENTO "+conversion; `valor` = ocup, salvo MODULA =
        ceil(ocup * 350.3) (sobre el promedio ya redondeado). ALMACENAMIENTO BIN conserva
@@ -1093,14 +1093,16 @@ def _run_ocupacion_pipeline(
     if ocu.empty:
         return []
 
-    # 6) Suma por día (List.Sum(List.RemoveNulls)) -> descarta días con suma 0/nula.
+    # 6) Suma por día (List.Sum(List.RemoveNulls)). Los días con suma 0 SÍ cuentan
+    #    en el promedio (ajuste 2026-09: antes se descartaban y el ceil subía); sólo
+    #    se descartan los días con suma nula.
     ocu["ocupacion"] = pd.to_numeric(ocu["ocupacion"], errors="coerce")
     daily = (
         ocu.groupby(["_fecha", "negocio", "negocio_facturador", "conversion"], dropna=False)
         .agg(ocupacion=("ocupacion", "sum"))
         .reset_index()
     )
-    daily = daily.loc[daily["ocupacion"].notna() & (daily["ocupacion"] != 0)]
+    daily = daily.loc[daily["ocupacion"].notna()]
     if daily.empty:
         return []
 
